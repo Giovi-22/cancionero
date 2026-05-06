@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  allowedDevOrigins: ['*', 'http://localhost:3000', 'http://[IP_ADDRESS]', 'http://192.168.68.117'],
 };
 
 export default nextConfig;

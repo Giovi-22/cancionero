@@ -53,26 +53,30 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
       </header>
 
       {/* Viewer Area */}
-      <div className="flex-1 relative w-full h-full bg-zinc-900">
-        {viewerUrl ? (
-          <iframe 
-            src={viewerUrl}
-            className="w-full h-full border-none"
-            allow="autoplay"
-          />
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center p-8">
-            <p className="text-muted-foreground">No se puede previsualizar este archivo.</p>
-            <a 
-              href={song.webViewLink} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="mt-4 text-accent font-bold hover:underline"
-            >
-              Abrir en Google Drive Externo →
-            </a>
-          </div>
-        )}
+      <div className="flex-1 relative w-full h-full bg-zinc-900 overflow-auto py-4 sm:py-8">
+        <div className="mx-auto h-full max-w-5xl px-4 sm:px-8 lg:px-12">
+          {viewerUrl ? (
+            <div className="w-full h-full rounded-lg overflow-hidden shadow-2xl border border-muted/20 bg-white">
+              <iframe 
+                src={viewerUrl}
+                className="w-full h-full border-none"
+                allow="autoplay"
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center p-8">
+              <p className="text-muted-foreground">No se puede previsualizar este archivo.</p>
+              <a 
+                href={song.webViewLink} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="mt-4 text-accent font-bold hover:underline"
+              >
+                Abrir en Google Drive Externo →
+              </a>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Floating Action Button (Opcional - para facilitar volver en tablets) */}
