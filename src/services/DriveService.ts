@@ -94,6 +94,32 @@ export class DriveService {
       throw new Error('No se pudieron obtener las canciones de Google Drive.');
     }
   }
+
+  /**
+   * Obtiene los detalles de una canción por su ID
+   */
+  public async getSongDetails(accessToken: string, fileId: string): Promise<Song> {
+    const drive = this.getDriveClient(accessToken);
+    try {
+      const response = await drive.files.get({
+        fileId: fileId,
+        fields: 'id, name, mimeType, webViewLink, thumbnailLink, modifiedTime',
+      });
+
+      const file = response.data;
+      return {
+        id: file.id || '',
+        name: file.name || 'Sin título',
+        mimeType: file.mimeType || '',
+        webViewLink: file.webViewLink || undefined,
+        thumbnailLink: file.thumbnailLink || undefined,
+        modifiedTime: file.modifiedTime || undefined,
+      };
+    } catch (error) {
+      console.error(`Error fetching song details for ${fileId}:`, error);
+      throw new Error('No se pudo obtener la información de la canción.');
+    }
+  }
 }
 
 export const driveService = DriveService.getInstance();
