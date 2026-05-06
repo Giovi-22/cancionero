@@ -20,14 +20,55 @@ export class DriveService {
   }
 
   /**
-   * Obtiene el listado de archivos (PDF y Google Docs) de una carpeta específica
+   * Obtiene recursivamente todos los IDs de las subcarpetas
    */
-  public async getSongsFromFolder(accessToken: string, folderId: string): Promise<DriveFolderContent> {
+  private async getAllSubfolderIds(accessToken: string, rootFolderId: string): Promise<string[]> {
+    const drive = this.getDriveClient(accessToken);
+    const folderIds: string[] = [rootFolderId];
+    
+    // Cola para búsqueda por niveles (BFS)
+    const queue = [rootFolderId];
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      try {
+        const response = await drive.files.list({
+          q: `'${currentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id)',
+        });
+        
+        const subfolders = response.data.files || [];
+        for (const folder of subfolders) {
+          if (folder.id) {
+            folderIds.push(folder.id);
+            queue.push(folder.id);
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching subfolders for ${currentId}:`, error);
+      }
+    }
+    
+    return folderIds;
+  }
+
+  /**
+   * Obtiene el listado de archivos (PDF y Google Docs) de una carpeta y sus subcarpetas
+   */
+  public async getSongsFromFolder(accessToken: string, rootFolderId: string): Promise<DriveFolderContent> {
     const drive = this.getDriveClient(accessToken);
     
     try {
+      // 1. Obtener todos los IDs de las subcarpetas para búsqueda exhaustiva
+      const allFolderIds = await this.getAllSubfolderIds(accessToken, rootFolderId);
+      
+      // 2. Construir el query para buscar en múltiples padres
+      // Nota: Si hay demasiadas carpetas, el query puede fallar por longitud. 
+      // Si eso pasa, buscaremos de otra forma.
+      const parentQuery = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
+      
       const response = await drive.files.list({
-        q: `'${folderId}' in parents and (mimeType = 'application/pdf' or mimeType = 'application/vnd.google-apps.document') and trashed = false`,
+        q: `(${parentQuery}) and (mimeType = 'application/pdf' or mimeType = 'application/vnd.google-apps.document') and trashed = false`,
         fields: 'nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, modifiedTime)',
         orderBy: 'name',
         pageSize: 100,
