@@ -62,8 +62,9 @@ export default function Navbar() {
                     </span>
                   </div>
                 )}
-              </>
-            ) : (
+              </div>
+            </>
+          ) : (
               <button 
                 onClick={() => signIn('google')}
                 disabled={isLoading}
