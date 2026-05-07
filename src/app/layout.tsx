@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import SessionProvider from "@/components/providers/SessionProvider";
+import ServiceWorkerRegister from "@/components/providers/ServiceWorkerRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,27 +47,8 @@ export default function RootLayout({
         <SessionProvider>
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
+          <ServiceWorkerRegister />
         </SessionProvider>
-        
-        {/* Service Worker Registration Script */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(
-                    function(registration) {
-                      console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    },
-                    function(err) {
-                      console.log('ServiceWorker registration failed: ', err);
-                    }
-                  );
-                });
-              }
-            `,
-          }}
-        />
       </body>
     </html>
   );
