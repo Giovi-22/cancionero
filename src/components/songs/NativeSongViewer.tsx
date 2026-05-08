@@ -398,8 +398,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
       {/* Contenido de la Canción (Renderizado por Línea) */}
       <div className="w-full max-w-5xl pl-4 sm:pl-12 md:pl-24 py-12 pr-6">
