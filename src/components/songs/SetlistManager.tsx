@@ -67,12 +67,14 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
         .filter((song): song is Song => !!song)
     : []
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newSetName.trim()) return
-    const newSet = createSetlist(newSetName.trim())
+    const newSet = await createSetlist(newSetName.trim())
     setNewSetName('')
-    setSelectedSetId(newSet.id)
+    if (newSet && newSet.id) {
+      setSelectedSetId(newSet.id)
+    }
   }
 
   return (
