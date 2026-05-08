@@ -34,22 +34,29 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
 
     const importData = searchParams.get('import')
     if (importData) {
-      try {
-        const decoded = JSON.parse(atob(importData))
-        if (decoded.name && decoded.songIds && Array.isArray(decoded.songIds)) {
-          if (confirm(`¿Quieres importar la lista "${decoded.name}" con ${decoded.songIds.length} canciones?`)) {
-            const newSet = createSetlist(decoded.name)
-            // Agregamos las canciones una por una
-            decoded.songIds.forEach((sId: string) => addSongToSetlist(newSet.id, sId))
-            alert('¡Lista importada con éxito!')
-            setSelectedSetId(newSet.id)
-            // Limpiar URL
-            window.history.replaceState({}, '', '/setlists')
+      const doImport = async () => {
+        try {
+          const decoded = JSON.parse(atob(importData))
+          if (decoded.name && decoded.songIds && Array.isArray(decoded.songIds)) {
+            if (confirm(`¿Quieres importar la lista "${decoded.name}" con ${decoded.songIds.length} canciones?`)) {
+              const newSet = await createSetlist(decoded.name)
+              if (newSet && newSet.id) {
+                // Agregamos las canciones una por una secuencialmente
+                for (const sId of decoded.songIds) {
+                  await addSongToSetlist(newSet.id, sId)
+                }
+                alert('¡Lista importada con éxito!')
+                setSelectedSetId(newSet.id)
+                // Limpiar URL
+                window.history.replaceState({}, '', '/setlists')
+              }
+            }
           }
+        } catch (e) {
+          console.error('Error importing setlist', e)
         }
-      } catch (e) {
-        console.error('Error importing setlist', e)
       }
+      doImport()
     }
   }, [searchParams, setlists, createSetlist, addSongToSetlist])
 
