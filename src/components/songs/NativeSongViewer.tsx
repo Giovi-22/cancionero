@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { transposeText, trimCommonIndentation } from '@/utils/chordUtils'
+import { useSession } from 'next-auth/react'
+import { supabase } from '@/lib/supabase'
+import { transposeText, trimCommonIndentation, cleanSongText } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
+import Link from 'next/link'
 
 interface NativeSongViewerProps {
   content: string
@@ -11,6 +14,7 @@ interface NativeSongViewerProps {
 }
 
 export default function NativeSongViewer({ content, title, id }: NativeSongViewerProps) {
+  const { data: session } = useSession()
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
   const [fontSize, setFontSize] = useState(18)
@@ -19,7 +23,8 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [isStageMode, setIsStageMode] = useState(false)
   const [musicianNotes, setMusicianNotes] = useState<Record<number, string>>({})
   const [editingLine, setEditingLine] = useState<number | null>(null)
-  const [showNotes, setShowNotes] = useState(true) // Activado por defecto para verlas
+  const [showNotes, setShowNotes] = useState(true)
+  const [isSyncing, setIsSyncing] = useState(false)
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const viewerRef = useRef<HTMLDivElement>(null)
 
@@ -45,36 +50,97 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
   const { isFavorite, toggleFavorite } = useFavorites()
 
-  // Cargar configuración guardada
+  // 1. Cargar configuración (SessionStorage -> Nube)
   useEffect(() => {
-    const saved = localStorage.getItem(`song_settings_${id}`)
-    if (saved) {
-      try {
-        const settings = JSON.parse(saved)
-        if (typeof settings.transpose === 'number') setTranspose(settings.transpose)
-        if (typeof settings.capo === 'number') setCapo(settings.capo)
-        if (typeof settings.fontSize === 'number') setFontSize(settings.fontSize)
-        if (settings.musicianNotes && typeof settings.musicianNotes === 'object') {
-          setMusicianNotes(settings.musicianNotes)
+    const loadSettings = async () => {
+      // Cargar de sessionStorage primero (temporal)
+      const saved = sessionStorage.getItem(`song_settings_${id}`)
+      if (saved) {
+        try {
+          const s = JSON.parse(saved)
+          if (typeof s.transpose === 'number') setTranspose(s.transpose)
+          if (typeof s.capo === 'number') setCapo(s.capo)
+          if (typeof s.fontSize === 'number') setFontSize(s.fontSize)
+          if (s.musicianNotes) setMusicianNotes(s.musicianNotes)
+        } catch (e) {}
+      }
+
+      // Si hay sesión, cargar de Supabase
+      if (session?.user?.email) {
+        console.log(`Buscando ajustes en la nube para canción: ${id} (${session.user.email})`);
+        setIsSyncing(true)
+        const { data, error } = await supabase
+          .from('song_settings')
+          .select('*')
+          .eq('user_email', session.user.email)
+          .eq('song_id', id)
+          .maybeSingle()
+
+        if (error) {
+          console.error('Error al cargar ajustes de Supabase:', error);
         }
-      } catch (e) {
-        console.error('Error loading settings', e)
+
+        if (data) {
+          console.log('Ajustes cargados de la nube:', data);
+          setTranspose(data.transpose)
+          setCapo(data.capo)
+          setFontSize(data.font_size)
+          setMusicianNotes(data.musician_notes || {})
+          
+          // Actualizar session
+          sessionStorage.setItem(`song_settings_${id}`, JSON.stringify({
+            transpose: data.transpose,
+            capo: data.capo,
+            fontSize: data.font_size,
+            musicianNotes: data.musician_notes
+          }))
+        } else {
+          console.log('No se encontraron ajustes previos en la nube para esta canción.');
+        }
+        setIsSyncing(false)
       }
     }
-  }, [id])
 
-  // Guardar configuración al cambiar
+    loadSettings()
+  }, [id, session])
+
+  // 2. Guardar configuración con Debounce para evitar saturar Supabase
   useEffect(() => {
-    localStorage.setItem(`song_settings_${id}`, JSON.stringify({
-      transpose,
-      capo,
-      fontSize,
-      musicianNotes
-    }))
-  }, [id, transpose, capo, fontSize, musicianNotes])
+    const timer = setTimeout(async () => {
+      // Guardar en sessionStorage siempre
+      sessionStorage.setItem(`song_settings_${id}`, JSON.stringify({
+        transpose, capo, fontSize, musicianNotes
+      }))
+
+      // Guardar en la nube si hay sesión
+      if (session?.user?.email) {
+        console.log('Intentando guardar ajustes en Supabase...');
+        const { error } = await supabase
+          .from('song_settings')
+          .upsert({
+            user_email: session.user.email,
+            song_id: id,
+            transpose,
+            capo,
+            font_size: fontSize,
+            musician_notes: musicianNotes,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_email,song_id' })
+        
+        if (error) {
+          console.error('Error al guardar ajustes en Supabase:', error);
+        } else {
+          console.log('Ajustes guardados con éxito en la nube.');
+        }
+      }
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [id, transpose, capo, fontSize, musicianNotes, session])
 
   // Transposición combinada (Tono + Capo) y limpieza de sangría
-  const rawTransposed = transposeText(content, transpose - capo)
+  const cleanedContent = cleanSongText(content)
+  const rawTransposed = transposeText(cleanedContent, transpose - capo)
   const displayContent = trimCommonIndentation(rawTransposed)
 
   // Lógica de Auto-scroll
@@ -228,33 +294,6 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                 )}
              </div>
           </div>
-          </div>
-        </div>
-      )}
-
-      {/* Panel de Notas del Músico */}
-      {showNotes && (
-        <div className="max-w-5xl mx-auto w-full px-6 mt-8 animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-accent/5 border border-accent/20 rounded-2xl p-6 relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                <h3 className="text-xs font-bold text-accent uppercase tracking-widest">Notas Personales</h3>
-              </div>
-              <button onClick={() => setShowNotes(false)} className="text-muted-foreground hover:text-foreground">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <textarea
-              value={musicianNotes}
-              onChange={(e) => setMusicianNotes(e.target.value)}
-              placeholder="Escribe aquí tus notas (ej: Intro G-D, voz suave, etc...)"
-              className="w-full bg-transparent border-none focus:ring-0 text-sm text-foreground/80 placeholder:text-muted-foreground/30 min-h-[100px] resize-none"
-            />
           </div>
         </div>
       )}

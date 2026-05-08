@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Song } from '@/types/drive'
 import Link from 'next/link'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -14,6 +14,7 @@ export default function SongList({ initialSongs }: SongListProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false)
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(20)
   const { isFavorite, toggleFavorite } = useFavorites()
   const { setlists, addSongToSetlist } = useSetlists()
 
@@ -24,6 +25,20 @@ export default function SongList({ initialSongs }: SongListProps) {
       return matchesSearch && matchesFavorite
     })
   }, [initialSongs, searchQuery, showOnlyFavorites, isFavorite])
+
+  useEffect(() => {
+    setVisibleCount(20)
+  }, [searchQuery, showOnlyFavorites])
+
+  const visibleSongs = useMemo(() => {
+    return filteredSongs.slice(0, visibleCount)
+  }, [filteredSongs, visibleCount])
+
+  const hasMore = visibleCount < filteredSongs.length
+
+  const loadMore = () => {
+    setVisibleCount(prev => prev + 20)
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -79,7 +94,7 @@ export default function SongList({ initialSongs }: SongListProps) {
 
       {/* Lista de Canciones */}
       <div className="flex flex-col gap-2">
-        {filteredSongs.map((song) => (
+        {visibleSongs.map((song) => (
           <div key={song.id} className="group flex items-center gap-2">
             <Link 
               href={`/songs/${song.id}`}
@@ -183,6 +198,21 @@ export default function SongList({ initialSongs }: SongListProps) {
           </div>
         ))}
       </div>
+
+      {/* Botón Cargar Más */}
+      {hasMore && (
+        <div className="flex justify-center py-8">
+          <button 
+            onClick={loadMore}
+            className="bg-accent/10 hover:bg-accent hover:text-white text-accent px-8 py-3 rounded-2xl border border-accent/20 transition-all font-semibold flex items-center gap-2 group"
+          >
+            <span>Cargar más canciones</span>
+            <svg className="w-4 h-4 group-hover:translate-y-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

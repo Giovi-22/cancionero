@@ -127,6 +127,44 @@ export function trimCommonIndentation(text: string): string {
 }
 
 /**
+ * Limpia el texto de una canción eliminando espacios excesivos
+ * producidos por pies de página de Google Docs o saltos de página.
+ */
+export function cleanSongText(text: string): string {
+  if (!text) return '';
+  
+  // 1. Normalizar saltos de línea y limpiar espacios al final de cada línea
+  let cleaned = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n');
+
+  // 2. Colapsar múltiples líneas en blanco a máximo una
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  // 3. Asegurar que las etiquetas de sección (ej: [CORO]) tengan una línea en blanco antes
+  // Buscamos cualquier línea que empiece con [ y nos aseguramos que tenga \n\n antes
+  const lines = cleaned.split('\n');
+  const resultLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isSectionHeader = line.trim().startsWith('[');
+    
+    // Si es una cabecera de sección y no es la primera línea, 
+    // y la línea anterior no está vacía, insertamos una línea vacía.
+    if (isSectionHeader && i > 0 && resultLines[resultLines.length - 1] !== '') {
+      resultLines.push('');
+    }
+    
+    resultLines.push(line);
+  }
+
+  return resultLines.join('\n').trim();
+}
+
+/**
  * Calcula los semitonos necesarios para un capodastro
  * Si el capo está en el traste 4, y quiero ver los acordes "fáciles",
  * tengo que restar 4 semitonos a la visualización.

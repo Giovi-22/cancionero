@@ -1,25 +1,45 @@
-import { auth } from "@/auth"
+'use client'
+
+import { useSession } from "next-auth/react"
 import { redirect } from "next/navigation"
+import { useState, useEffect } from "react"
 import { driveService } from "@/services/DriveService"
+import { Song } from "@/types/drive"
 import SetlistManager from "@/components/songs/SetlistManager"
 
-export default async function SetlistsPage() {
-  const session = await auth()
+export default function SetlistsPage() {
+  const { data: session, status } = useSession()
+  const [songs, setSongs] = useState<Song[]>([])
+  const [loading, setLoading] = useState(true)
 
-  if (!session || !session.accessToken) {
-    redirect("/")
-  }
+  useEffect(() => {
+    const fetchSongs = async () => {
+      if (status === "authenticated" && session?.accessToken) {
+        const folderId = process.env.NEXT_PUBLIC_DRIVE_SHARED_FOLDER_ID || "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
+        try {
+          const songsData = await driveService.getSongsFromFolder(session.accessToken, folderId)
+          setSongs(songsData.songs)
+        } catch (error) {
+          console.error("Error fetching songs for setlists", error)
+        } finally {
+          setLoading(false)
+        }
+      } else if (status === "unauthenticated") {
+        redirect("/")
+      }
+    };
 
-  const folderId = process.env.DRIVE_SHARED_FOLDER_ID
-  let songs = []
-  
-  if (folderId && folderId !== "tu_folder_id_aqui") {
-    try {
-      const songsData = await driveService.getSongsFromFolder(session.accessToken, folderId)
-      songs = songsData.songs
-    } catch (error) {
-      console.error("Error fetching songs for setlists", error)
+    if (status !== "loading") {
+      fetchSongs()
     }
+  }, [session, status])
+
+  if (status === "loading" || loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent"></div>
+      </div>
+    )
   }
 
   return (
