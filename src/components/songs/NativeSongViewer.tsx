@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
 import { transposeText, trimCommonIndentation, cleanSongText } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useSetlists } from '@/hooks/useSetlists'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 interface NativeSongViewerProps {
@@ -15,6 +17,10 @@ interface NativeSongViewerProps {
 
 export default function NativeSongViewer({ content, title, id }: NativeSongViewerProps) {
   const { data: session } = useSession()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const setlistId = searchParams.get('setlist')
+  
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
   const [fontSize, setFontSize] = useState(18)
@@ -25,6 +31,48 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [editingLine, setEditingLine] = useState<number | null>(null)
   const [showNotes, setShowNotes] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  
+  // Metrónomo
+  const [bpm, setBpm] = useState(120)
+  const [isMetronomeActive, setIsMetronomeActive] = useState(false)
+  const [beat, setBeat] = useState(false)
+
+  // Sincronización de Banda
+  const [isFollowingBand, setIsFollowingBand] = useState(false)
+  const { subscribeToSetlist, syncCurrentSong } = useSetlists()
+
+  // Lógica de Metrónomo
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (isMetronomeActive) {
+      const msPerBeat = 60000 / bpm
+      interval = setInterval(() => {
+        setBeat(prev => !prev)
+        setTimeout(() => setBeat(prev => !prev), 100)
+      }, msPerBeat)
+    }
+    return () => clearInterval(interval)
+  }, [isMetronomeActive, bpm])
+
+  // Lógica de Sincronización (Si estamos en modo seguidor)
+  useEffect(() => {
+    if (isFollowingBand && setlistId) {
+      const unsubscribe = subscribeToSetlist(setlistId, (newSongId) => {
+        if (newSongId !== id) {
+          router.push(`/songs/${newSongId}?setlist=${setlistId}`)
+        }
+      })
+      return () => unsubscribe()
+    }
+  }, [isFollowingBand, setlistId, id])
+
+  // Lógica de Líder (Si cambiamos de canción y tenemos un setlist activo)
+  useEffect(() => {
+    if (setlistId && session?.user?.email) {
+      // Avisar a Supabase que estamos en esta canción
+      syncCurrentSong(setlistId, id)
+    }
+  }, [id, setlistId, session])
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const viewerRef = useRef<HTMLDivElement>(null)
 
@@ -143,22 +191,38 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const rawTransposed = transposeText(cleanedContent, transpose - capo)
   const displayContent = trimCommonIndentation(rawTransposed)
 
-  // Lógica de Auto-scroll
+  const scrollRequestRef = useRef<number | null>(null)
+  const lastScrollTimeRef = useRef<number>(0)
+
+  // Motor de Auto-scroll suave (Sub-píxel)
   useEffect(() => {
-    if (isScrolling) {
-      scrollIntervalRef.current = setInterval(() => {
-        if (window) {
-          window.scrollBy({ top: scrollSpeed, behavior: 'auto' })
-          if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight) {
-            setIsScrolling(false)
-          }
+    const scrollStep = (timestamp: number) => {
+      if (!lastScrollTimeRef.current) lastScrollTimeRef.current = timestamp
+      
+      const deltaTime = timestamp - lastScrollTimeRef.current
+      lastScrollTimeRef.current = timestamp
+
+      if (isScrolling && window) {
+        const moveAmount = scrollSpeed * 0.03 * deltaTime
+        window.scrollBy(0, moveAmount)
+
+        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 5) {
+          setIsScrolling(false)
+        } else {
+          scrollRequestRef.current = requestAnimationFrame(scrollStep)
         }
-      }, 50)
-    } else {
-      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current)
+      }
     }
+
+    if (isScrolling) {
+      lastScrollTimeRef.current = 0
+      scrollRequestRef.current = requestAnimationFrame(scrollStep)
+    } else {
+      if (scrollRequestRef.current) cancelAnimationFrame(scrollRequestRef.current)
+    }
+
     return () => {
-      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current)
+      if (scrollRequestRef.current) cancelAnimationFrame(scrollRequestRef.current)
     }
   }, [isScrolling, scrollSpeed])
 
@@ -260,7 +324,46 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 </button>
+              {/* Metrónomo */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">BPM</span>
+                <div className="flex items-center bg-muted/50 rounded-full p-1 border border-white/5">
+                  <input 
+                    type="number" 
+                    value={bpm}
+                    onChange={(e) => setBpm(Number(e.target.value))}
+                    className="w-10 bg-transparent text-center font-mono font-bold text-accent text-[10px] focus:outline-none"
+                  />
+                  <button 
+                    onClick={() => setIsMetronomeActive(!isMetronomeActive)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${
+                      isMetronomeActive ? 'bg-accent text-white' : 'hover:bg-accent/10 text-muted-foreground'
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full ${beat ? 'bg-white scale-150' : 'bg-current'} transition-all`} />
+                  </button>
+                </div>
               </div>
+
+              {/* Modo Banda (Solo si hay setlist) */}
+              {setlistId && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Banda</span>
+                  <button 
+                    onClick={() => setIsFollowingBand(!isFollowingBand)}
+                    className={`h-9 px-3 flex items-center gap-2 rounded-full transition-all border border-white/5 font-bold text-[10px] ${
+                      isFollowingBand 
+                        ? 'bg-green-500/20 text-green-500 border-green-500/30 animate-pulse' 
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    {isFollowingBand ? 'En Vivo' : 'Seguir'}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-4">
@@ -276,27 +379,27 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                  Escenario
                </button>
 
-               {/* Auto-scroll Toggle */}
-             <div className="flex items-center gap-2 bg-muted/30 rounded-full px-4 py-2 border border-white/5">
-                <button 
-                  onClick={() => setIsScrolling(!isScrolling)}
-                  className={`flex items-center gap-2 text-sm font-bold transition-colors ${isScrolling ? 'text-accent' : 'text-muted-foreground'}`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${isScrolling ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
-                  {isScrolling ? 'Scroll ON' : 'Scroll OFF'}
-                </button>
-                {isScrolling && (
-                  <div className="flex items-center gap-1 ml-2 border-l border-muted pl-2">
-                    <button onClick={() => setScrollSpeed(Math.max(0.5, scrollSpeed - 0.5))} className="hover:text-accent text-xs">Slower</button>
-                    <span className="text-[10px] bg-muted px-1.5 rounded text-white">x{scrollSpeed}</span>
-                    <button onClick={() => setScrollSpeed(Math.min(5, scrollSpeed + 0.5))} className="hover:text-accent text-xs">Faster</button>
-                  </div>
-                )}
-             </div>
+                {/* Auto-scroll Toggle */}
+                <div className="flex items-center gap-2 bg-muted/30 rounded-full px-4 py-2 border border-white/5">
+                  <button 
+                    onClick={() => setIsScrolling(!isScrolling)}
+                    className={`flex items-center gap-2 text-sm font-bold transition-colors ${isScrolling ? 'text-accent' : 'text-muted-foreground'}`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${isScrolling ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
+                    {isScrolling ? 'Scroll ON' : 'Scroll OFF'}
+                  </button>
+                  {isScrolling && (
+                    <div className="flex items-center gap-1 ml-2 border-l border-muted pl-2">
+                      <button onClick={() => setScrollSpeed(Math.max(0.1, Math.round((scrollSpeed - 0.1) * 10) / 10))} className="hover:text-accent text-[10px] px-1">Slower</button>
+                      <span className="text-[10px] bg-muted px-1.5 rounded text-white font-mono">{scrollSpeed.toFixed(1)}</span>
+                      <button onClick={() => setScrollSpeed(Math.min(4.0, Math.round((scrollSpeed + 0.1) * 10) / 10))} className="hover:text-accent text-[10px] px-1">Faster</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Contenido de la Canción (Renderizado por Línea) */}
       <div className="w-full max-w-5xl pl-4 sm:pl-12 md:pl-24 py-12 pr-6">

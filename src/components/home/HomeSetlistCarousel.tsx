@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Song } from '@/types/drive'
 import { useSetlists } from '@/hooks/useSetlists'
 import Link from 'next/link'
@@ -12,6 +12,30 @@ interface HomeSetlistCarouselProps {
 export default function HomeSetlistCarousel({ allSongs }: HomeSetlistCarouselProps) {
   const { setlists } = useSetlists()
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null)
+  
+  // Lógica para arrastrar con el mouse
+  const carouselRef = useRef<HTMLDivElement>(null)
+  const [isDown, setIsDown] = useState(false)
+  const [startX, setStartX] = useState(0)
+  const [scrollLeft, setScrollLeft] = useState(0)
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!carouselRef.current) return
+    setIsDown(true)
+    setStartX(e.pageX - carouselRef.current.offsetLeft)
+    setScrollLeft(carouselRef.current.scrollLeft)
+  }
+
+  const handleMouseLeave = () => setIsDown(false)
+  const handleMouseUp = () => setIsDown(false)
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDown || !carouselRef.current) return
+    e.preventDefault()
+    const x = e.pageX - carouselRef.current.offsetLeft
+    const walk = (x - startX) * 2 // Sensibilidad del arrastre
+    carouselRef.current.scrollLeft = scrollLeft - walk
+  }
 
   // Si no hay set seleccionado, usamos el primero que tenga canciones
   const currentSetId = selectedSetId || setlists.find(s => s.songIds.length > 0)?.id || (setlists.length > 0 ? setlists[0].id : null)
@@ -73,7 +97,14 @@ export default function HomeSetlistCarousel({ allSongs }: HomeSetlistCarouselPro
         <Link href="/songs" className="text-sm font-semibold text-accent hover:underline shrink-0">Ver todo el repertorio</Link>
       </div>
       
-      <div className="flex gap-6 overflow-x-auto pb-8 scrollbar-hide snap-x">
+      <div 
+        ref={carouselRef}
+        onMouseDown={handleMouseDown}
+        onMouseLeave={handleMouseLeave}
+        onMouseUp={handleMouseUp}
+        onMouseMove={handleMouseMove}
+        className={`flex gap-6 overflow-x-auto pb-8 scrollbar-hide snap-x ${isDown ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+      >
         {carouselSongs.map((song) => (
           <Link 
             href={`/songs/${song.id}`}

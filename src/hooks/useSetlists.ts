@@ -191,6 +191,38 @@ export function useSetlists() {
     updateSetlist(setlistId, { songIds: newSongIds });
   };
 
+  const syncCurrentSong = async (setlistId: string, songId: string | null) => {
+    if (!session?.user?.email) return;
+    await supabase
+      .from('setlists')
+      .update({ current_song_id: songId })
+      .eq('id', setlistId);
+  };
+
+  const subscribeToSetlist = (setlistId: string, onSongChange: (songId: string) => void) => {
+    const channel = supabase
+      .channel(`setlist_sync_${setlistId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'setlists',
+          filter: `id=eq.${setlistId}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.current_song_id) {
+            onSongChange(payload.new.current_song_id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
   return { 
     setlists, 
     createSetlist, 
@@ -199,6 +231,8 @@ export function useSetlists() {
     removeSongFromSetlist, 
     moveSongInSetlist, 
     toggleSetlistPublic,
+    syncCurrentSong,
+    subscribeToSetlist,
     isSyncing 
   };
 }
