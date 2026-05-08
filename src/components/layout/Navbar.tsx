@@ -12,13 +12,13 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-muted bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-            <div className="relative h-8 w-8 overflow-hidden rounded-lg">
+          <Link href="/" className="flex items-center gap-3 transition-all hover:scale-105 active:scale-95">
+            <div className="relative h-10 w-10 overflow-hidden rounded-xl bg-white/10 p-1 backdrop-blur-sm border border-white/10">
               <Image
-                src="/icon-512x512.png"
+                src="/logo.png"
                 alt="Logo"
                 fill
-                className="object-cover"
+                className="object-contain invert"
               />
             </div>
             <span className="text-xl font-bold tracking-tight text-foreground">
@@ -34,7 +34,13 @@ export default function Navbar() {
                 href="/songs" 
                 className="rounded-full bg-muted px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
               >
-                Mi Repertorio
+                Repertorio
+              </Link>
+              <Link 
+                href="/setlists" 
+                className="rounded-full bg-muted px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
+              >
+                Mis Listas
               </Link>
               <div className="flex items-center gap-3 ml-2 border-l border-muted pl-4">
                 <div className="hidden sm:block text-right">

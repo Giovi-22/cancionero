@@ -5,6 +5,7 @@ export interface Song {
   webViewLink?: string;
   thumbnailLink?: string;
   modifiedTime?: string;
+  content?: string;
 }
 
 export interface DriveFolderContent {

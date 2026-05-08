@@ -120,6 +120,25 @@ export class DriveService {
       throw new Error('No se pudo obtener la información de la canción.');
     }
   }
+
+  /**
+   * Obtiene el contenido de un Google Doc como texto plano
+   */
+  public async getSongContent(accessToken: string, fileId: string): Promise<string> {
+    const drive = this.getDriveClient(accessToken);
+    try {
+      const response = await drive.files.export({
+        fileId: fileId,
+        mimeType: 'text/plain',
+      });
+
+      return response.data as string;
+    } catch (error) {
+      console.error(`Error exporting song content for ${fileId}:`, error);
+      // Si falla la exportación (ej: es un PDF), devolvemos vacío o manejamos el error
+      return '';
+    }
+  }
 }
 
 export const driveService = DriveService.getInstance();

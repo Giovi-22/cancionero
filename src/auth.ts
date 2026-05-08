@@ -16,6 +16,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+  trustHost: true,
   callbacks: {
     async jwt({ token, account }) {
       // Persistir el access_token en el token JWT

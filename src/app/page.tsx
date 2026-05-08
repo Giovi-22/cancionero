@@ -1,17 +1,34 @@
 import Image from "next/image";
 import Link from "next/link";
+import { auth } from "@/auth";
+import { driveService } from "@/services/DriveService";
+import HomeSetlistCarousel from "@/components/home/HomeSetlistCarousel";
 
-export default function Home() {
+export default async function Home() {
+  const session = await auth();
+  const folderId = process.env.DRIVE_SHARED_FOLDER_ID;
+  
+  let songs: any[] = [];
+  
+  if (session?.accessToken && folderId && folderId !== "tu_folder_id_aqui") {
+    try {
+      const data = await driveService.getSongsFromFolder(session.accessToken, folderId);
+      songs = data.songs;
+    } catch (e) {
+      console.error("Error fetching songs for home carousel", e);
+    }
+  }
+
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 py-24 sm:py-32 lg:px-8">
       {/* Background Glow */}
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(45%_45%_at_50%_50%,rgba(16,185,129,0.1)_0%,rgba(9,9,11,0)_100%)]" />
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(45%_45%_at_50%_50%,rgba(139,92,246,0.15)_0%,rgba(2,6,23,0)_100%)]" />
       
       <div className="mx-auto max-w-2xl text-center">
         <div className="mb-8 flex justify-center">
           <div className="relative rounded-full px-3 py-1 text-sm leading-6 text-muted-foreground ring-1 ring-white/10 hover:ring-white/20">
-            Fase 2: Interfaz Base & PWA activa.{' '}
-            <span className="font-semibold text-accent">Listo para el escenario</span>
+            Fase 3: Listas Dinámicas & Gestión Pro.{' '}
+            <span className="font-semibold text-accent">Listo para el show</span>
           </div>
         </div>
         
@@ -32,35 +49,15 @@ export default function Home() {
           >
             Ver mis canciones
           </Link>
-          <Link href="#features" className="text-sm font-semibold leading-6 text-foreground transition-colors hover:text-accent">
-            Saber más <span aria-hidden="true">→</span>
+          <Link href="/setlists" className="text-sm font-semibold leading-6 text-foreground transition-colors hover:text-accent">
+            Mis Listas de Temas <span aria-hidden="true">→</span>
           </Link>
         </div>
       </div>
 
-      {/* Decorative Grid or Elements */}
-      <div className="mt-16 flow-root sm:mt-24">
-        <div className="-m-2 rounded-xl bg-white/5 p-2 ring-1 ring-inset ring-white/10 lg:-m-4 lg:rounded-2xl lg:p-4">
-          <div className="flex items-center justify-center gap-8 opacity-40 grayscale transition-all hover:opacity-100 hover:grayscale-0">
-             {/* Simulating some song cards or preview */}
-             <div className="h-48 w-32 rounded-lg bg-muted border border-white/10 flex flex-col p-4 gap-2">
-                <div className="h-2 w-full bg-white/10 rounded" />
-                <div className="h-2 w-2/3 bg-white/10 rounded" />
-                <div className="mt-auto h-4 w-full bg-accent/20 rounded" />
-             </div>
-             <div className="h-56 w-40 rounded-lg bg-muted border border-white/10 flex flex-col p-4 gap-2 scale-110 shadow-2xl shadow-accent/20">
-                <div className="h-2 w-full bg-accent/40 rounded" />
-                <div className="h-2 w-2/3 bg-white/10 rounded" />
-                <div className="h-2 w-1/2 bg-white/10 rounded" />
-                <div className="mt-auto h-4 w-full bg-accent rounded" />
-             </div>
-             <div className="h-48 w-32 rounded-lg bg-muted border border-white/10 flex flex-col p-4 gap-2">
-                <div className="h-2 w-full bg-white/10 rounded" />
-                <div className="h-2 w-2/3 bg-white/10 rounded" />
-                <div className="mt-auto h-4 w-full bg-accent/20 rounded" />
-             </div>
-          </div>
-        </div>
+      {/* Dynamic Song Carousel Section */}
+      <div className="mt-16 w-full max-w-7xl px-4 sm:mt-24">
+        <HomeSetlistCarousel allSongs={songs} />
       </div>
     </div>
   );
