@@ -3,6 +3,8 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { driveService } from "@/services/DriveService";
 import HomeSetlistCarousel from "@/components/home/HomeSetlistCarousel";
+import UpcomingShows from "@/components/songs/UpcomingShows";
+import { Suspense } from "react";
 
 export default async function Home() {
   const session = await auth();
@@ -54,6 +56,11 @@ export default async function Home() {
           </Link>
         </div>
       </div>
+
+      {/* Shows Próximos / En Vivo */}
+      <Suspense fallback={null}>
+        <UpcomingShows />
+      </Suspense>
 
       {/* Dynamic Song Carousel Section */}
       <div className="mt-16 w-full max-w-7xl px-4 sm:mt-24">

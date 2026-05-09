@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
-import { transposeText, trimCommonIndentation, cleanSongText } from '@/utils/chordUtils'
+import { transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks, SongLineParsed } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSetlists } from '@/hooks/useSetlists'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +20,11 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const { data: session } = useSession()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const setlistId = searchParams.get('setlist')
+  // ?follow=[sessionId] = modo músico siguiendo al director
+  const followSessionId = searchParams.get('follow')
+  // ?list=[setlistId] = modo visualización de lista local
+  const listId = searchParams.get('list')
+  const { setlists } = useSetlists()
   
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
@@ -31,15 +36,16 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [editingLine, setEditingLine] = useState<number | null>(null)
   const [showNotes, setShowNotes] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   
   // Metrónomo
   const [bpm, setBpm] = useState(120)
   const [isMetronomeActive, setIsMetronomeActive] = useState(false)
   const [beat, setBeat] = useState(false)
 
-  // Sincronización de Banda
-  const [isFollowingBand, setIsFollowingBand] = useState(false)
-  const { subscribeToSetlist, syncCurrentSong } = useSetlists()
+  // Live Session
+  const { mySession, updateCurrentSong, subscribeToSession } = useLiveSession()
+  const isDirectorOfLiveSession = mySession?.status === 'live'
 
   // Lógica de Metrónomo
   useEffect(() => {
@@ -54,27 +60,27 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     return () => clearInterval(interval)
   }, [isMetronomeActive, bpm])
 
-  // Lógica de Sincronización (Si estamos en modo seguidor)
+  // Músico: suscribirse al show y seguir la canción del director
   useEffect(() => {
-    if (isFollowingBand && setlistId) {
-      const unsubscribe = subscribeToSetlist(setlistId, (newSongId) => {
-        if (newSongId !== id) {
-          router.push(`/songs/${newSongId}?setlist=${setlistId}`)
-        }
-      })
-      return () => unsubscribe()
-    }
-  }, [isFollowingBand, setlistId, id])
+    if (!followSessionId) return
+    const unsub = subscribeToSession(followSessionId, (newSongId) => {
+      if (newSongId !== id) {
+        router.push(`/songs/${newSongId}?follow=${followSessionId}`)
+      }
+    })
+    return unsub
+  }, [followSessionId, id, router, subscribeToSession])
 
-  // Lógica de Líder (Si cambiamos de canción y tenemos un setlist activo)
+  // Director: emitir la canción actual cuando cambia (si está en live)
   useEffect(() => {
-    if (setlistId && session?.user?.email) {
-      // Avisar a Supabase que estamos en esta canción
-      syncCurrentSong(setlistId, id)
+    if (isDirectorOfLiveSession) {
+      updateCurrentSong(id)
     }
-  }, [id, setlistId, session])
-  const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  }, [id, isDirectorOfLiveSession, updateCurrentSong])
+
   const viewerRef = useRef<HTMLDivElement>(null)
+  const scrollRequestRef = useRef<number | null>(null)
+  const lastScrollTimeRef = useRef<number>(0)
 
   const toggleStageMode = () => {
     if (!isStageMode) {
@@ -85,7 +91,6 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     setIsStageMode(!isStageMode)
   }
 
-  // Escuchar cambio de fullscreen para sincronizar el estado
   useEffect(() => {
     const handleFsChange = () => {
       if (!document.fullscreenElement) {
@@ -98,10 +103,9 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
   const { isFavorite, toggleFavorite } = useFavorites()
 
-  // 1. Cargar configuración (SessionStorage -> Nube)
+  // Cargar configuración
   useEffect(() => {
     const loadSettings = async () => {
-      // Cargar de sessionStorage primero (temporal)
       const saved = sessionStorage.getItem(`song_settings_${id}`)
       if (saved) {
         try {
@@ -113,57 +117,36 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
         } catch (e) {}
       }
 
-      // Si hay sesión, cargar de Supabase
       if (session?.user?.email) {
-        console.log(`Buscando ajustes en la nube para canción: ${id} (${session.user.email})`);
         setIsSyncing(true)
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('song_settings')
           .select('*')
           .eq('user_email', session.user.email)
           .eq('song_id', id)
           .maybeSingle()
 
-        if (error) {
-          console.error('Error al cargar ajustes de Supabase:', error);
-        }
-
         if (data) {
-          console.log('Ajustes cargados de la nube:', data);
           setTranspose(data.transpose)
           setCapo(data.capo)
           setFontSize(data.font_size)
           setMusicianNotes(data.musician_notes || {})
-          
-          // Actualizar session
-          sessionStorage.setItem(`song_settings_${id}`, JSON.stringify({
-            transpose: data.transpose,
-            capo: data.capo,
-            fontSize: data.font_size,
-            musicianNotes: data.musician_notes
-          }))
-        } else {
-          console.log('No se encontraron ajustes previos en la nube para esta canción.');
         }
         setIsSyncing(false)
       }
     }
-
     loadSettings()
   }, [id, session])
 
-  // 2. Guardar configuración con Debounce para evitar saturar Supabase
+  // Guardar configuración (Debounce)
   useEffect(() => {
     const timer = setTimeout(async () => {
-      // Guardar en sessionStorage siempre
       sessionStorage.setItem(`song_settings_${id}`, JSON.stringify({
         transpose, capo, fontSize, musicianNotes
       }))
 
-      // Guardar en la nube si hay sesión
       if (session?.user?.email) {
-        console.log('Intentando guardar ajustes en Supabase...');
-        const { error } = await supabase
+        await supabase
           .from('song_settings')
           .upsert({
             user_email: session.user.email,
@@ -174,38 +157,29 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             musician_notes: musicianNotes,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_email,song_id' })
-        
-        if (error) {
-          console.error('Error al guardar ajustes en Supabase:', error);
-        } else {
-          console.log('Ajustes guardados con éxito en la nube.');
-        }
       }
     }, 1500)
-
     return () => clearTimeout(timer)
   }, [id, transpose, capo, fontSize, musicianNotes, session])
 
-  // Transposición combinada (Tono + Capo) y limpieza de sangría
-  const cleanedContent = cleanSongText(content)
-  const rawTransposed = transposeText(cleanedContent, transpose - capo)
-  const displayContent = trimCommonIndentation(rawTransposed)
+  // Lógica de Procesado de Canción
+  const parsedLines = useMemo(() => {
+    const cleaned = cleanSongText(content)
+    const transposed = transposeText(cleaned, transpose - capo)
+    const trimmed = trimCommonIndentation(transposed)
+    return parseSongToBlocks(trimmed)
+  }, [content, transpose, capo])
 
-  const scrollRequestRef = useRef<number | null>(null)
-  const lastScrollTimeRef = useRef<number>(0)
-
-  // Motor de Auto-scroll suave (Sub-píxel)
+  // Motor de Auto-scroll
   useEffect(() => {
     const scrollStep = (timestamp: number) => {
       if (!lastScrollTimeRef.current) lastScrollTimeRef.current = timestamp
-      
       const deltaTime = timestamp - lastScrollTimeRef.current
       lastScrollTimeRef.current = timestamp
 
-      if (isScrolling && window) {
+      if (isScrolling) {
         const moveAmount = scrollSpeed * 0.03 * deltaTime
         window.scrollBy(0, moveAmount)
-
         if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 5) {
           setIsScrolling(false)
         } else {
@@ -220,268 +194,140 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     } else {
       if (scrollRequestRef.current) cancelAnimationFrame(scrollRequestRef.current)
     }
-
     return () => {
       if (scrollRequestRef.current) cancelAnimationFrame(scrollRequestRef.current)
     }
   }, [isScrolling, scrollSpeed])
 
+  // Lógica de Navegación de Lista Local
+  const listSetlist = listId ? setlists.find(s => s.id === listId) : null
+  const currentListIndex = listSetlist ? listSetlist.songIds.findIndex(songId => songId === id) : -1
+  const prevListSongId = currentListIndex > 0 && listSetlist ? listSetlist.songIds[currentListIndex - 1] : null
+  const nextListSongId = currentListIndex !== -1 && listSetlist && currentListIndex < listSetlist.songIds.length - 1 
+    ? listSetlist.songIds[currentListIndex + 1] 
+    : null
+
   return (
     <div className={`flex flex-col min-h-screen transition-colors duration-500 ${isStageMode ? 'bg-black' : 'bg-background'} pb-32`}>
-      {/* Controles Flotantes Superiores */}
+      
+      {/* Top Header Compacto */}
       {!isStageMode && (
-        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-muted px-4 py-4 sm:px-8 animate-in fade-in slide-in-from-top-4">
-          <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4 sm:gap-6">
-              {/* Control de Tono */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Transponer (Semitonos)</span>
-                <div className="flex items-center bg-muted/50 rounded-full p-1 border border-white/5">
-                  <button 
-                    onClick={() => setTranspose(prev => prev - 1)}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-accent hover:text-accent-foreground rounded-full transition-all"
-                    title="-1 Semitono"
-                  >
-                    -
-                  </button>
-                  <span className="w-14 text-center font-mono font-bold text-accent">
-                    {transpose > 0 ? `+${transpose}` : transpose} st
-                  </span>
-                  <button 
-                    onClick={() => setTranspose(prev => prev + 1)}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-accent hover:text-accent-foreground rounded-full transition-all"
-                    title="+1 Semitono"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Control de Capodastro */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Capo</span>
-                <select 
-                  value={capo} 
-                  onChange={(e) => setCapo(Number(e.target.value))}
-                  className="bg-muted/50 border border-white/5 rounded-full px-3 py-1.5 text-xs sm:text-sm font-bold text-accent focus:outline-none focus:ring-2 focus:ring-accent/50 appearance-none cursor-pointer"
-                >
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(fret => (
-                    <option key={fret} value={fret}>
-                      {fret === 0 ? 'Sin Capo' : `Traste ${fret}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Control de Tamaño de Fuente */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Zoom</span>
-                <div className="flex items-center bg-muted/50 rounded-full p-1 border border-white/5">
-                  <button 
-                    onClick={() => setFontSize(prev => Math.max(10, prev - 2))}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-accent hover:text-accent-foreground rounded-full transition-all text-xs"
-                  >
-                    A-
-                  </button>
-                  <button 
-                    onClick={() => setFontSize(prev => Math.min(40, prev + 2))}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-accent hover:text-accent-foreground rounded-full transition-all text-base"
-                  >
-                    A+
-                  </button>
-                </div>
-              </div>
-
-              {/* Favorito */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Fav</span>
-                <button 
-                  onClick={() => toggleFavorite(id)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all border border-white/5 ${
-                    isFavorite(id) 
-                      ? 'bg-accent/10 text-accent' 
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted/70'
-                  }`}
-                >
-                  <svg className={`w-5 h-5 ${isFavorite(id) ? 'fill-current' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.175 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Notas del Músico */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Notas</span>
-                <button 
-                  onClick={() => setShowNotes(!showNotes)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all border border-white/5 ${
-                    showNotes 
-                      ? 'bg-accent text-white' 
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted/70'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Metrónomo */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">BPM</span>
-                <div className="flex items-center bg-muted/50 rounded-full p-1 border border-white/5">
-                  <input 
-                    type="number" 
-                    value={bpm}
-                    onChange={(e) => setBpm(Number(e.target.value))}
-                    className="w-10 bg-transparent text-center font-mono font-bold text-accent text-[10px] focus:outline-none"
-                  />
-                  <button 
-                    onClick={() => setIsMetronomeActive(!isMetronomeActive)}
-                    className={`w-7 h-7 flex items-center justify-center rounded-full transition-all ${
-                      isMetronomeActive ? 'bg-accent text-white' : 'hover:bg-accent/10 text-muted-foreground'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${beat ? 'bg-white scale-150' : 'bg-current'} transition-all`} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Modo Banda (Solo si hay setlist) */}
-              {setlistId && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Banda</span>
-                  <button 
-                    onClick={() => setIsFollowingBand(!isFollowingBand)}
-                    className={`h-9 px-3 flex items-center gap-2 rounded-full transition-all border border-white/5 font-bold text-[10px] ${
-                      isFollowingBand 
-                        ? 'bg-green-500/20 text-green-500 border-green-500/30 animate-pulse' 
-                        : 'bg-muted/50 text-muted-foreground hover:bg-muted/70'
-                    }`}
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                    {isFollowingBand ? 'En Vivo' : 'Seguir'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4">
-               {/* Modo Escenario Toggle */}
-               <button 
-                onClick={toggleStageMode}
-                className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-full border border-white/10 hover:bg-white hover:text-black transition-all font-bold text-sm"
-               >
-                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                 </svg>
-                 Escenario
-               </button>
-
-                {/* Auto-scroll Toggle */}
-                <div className="flex items-center gap-2 bg-muted/30 rounded-full px-4 py-2 border border-white/5">
-                  <button 
-                    onClick={() => setIsScrolling(!isScrolling)}
-                    className={`flex items-center gap-2 text-sm font-bold transition-colors ${isScrolling ? 'text-accent' : 'text-muted-foreground'}`}
-                  >
-                    <div className={`w-2 h-2 rounded-full ${isScrolling ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
-                    {isScrolling ? 'Scroll ON' : 'Scroll OFF'}
-                  </button>
-                  {isScrolling && (
-                    <div className="flex items-center gap-1 ml-2 border-l border-muted pl-2">
-                      <button onClick={() => setScrollSpeed(Math.max(0.1, Math.round((scrollSpeed - 0.1) * 10) / 10))} className="hover:text-accent text-[10px] px-1">Slower</button>
-                      <span className="text-[10px] bg-muted px-1.5 rounded text-white font-mono">{scrollSpeed.toFixed(1)}</span>
-                      <button onClick={() => setScrollSpeed(Math.min(4.0, Math.round((scrollSpeed + 0.1) * 10) / 10))} className="hover:text-accent text-[10px] px-1">Faster</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-muted px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/songs" className="p-2 hover:bg-muted rounded-full transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <h1 className="text-sm font-bold truncate max-w-[200px] sm:max-w-md">{title}</h1>
           </div>
-        )}
+          
+          <div className="flex items-center gap-2">
+            {/* Controles de Navegación de Lista Local */}
+            {listSetlist && (
+              <div className="hidden sm:flex items-center gap-1 bg-muted/40 rounded-full p-1 border border-muted mr-2">
+                <button 
+                  onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
+                  disabled={!prevListSongId}
+                  className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
+                  title="Canción anterior de la lista"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-[10px] font-bold text-muted-foreground min-w-[36px] text-center px-1">
+                  {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
+                </span>
+                <button 
+                  onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
+                  disabled={!nextListSongId}
+                  className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
+                  title="Siguiente canción de la lista"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
 
-      {/* Contenido de la Canción (Renderizado por Línea) */}
-      <div className="w-full max-w-5xl pl-4 sm:pl-12 md:pl-24 py-12 pr-6">
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 hover:bg-muted rounded-full text-accent transition-colors relative"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              {isSyncing && <div className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full animate-pulse" />}
+            </button>
+            <button 
+              onClick={toggleStageMode}
+              className="hidden sm:flex items-center gap-2 bg-zinc-900 text-white px-4 py-1.5 rounded-full border border-white/10 hover:bg-white hover:text-black transition-all font-bold text-xs"
+            >
+              Escenario
+            </button>
+          </div>
+        </header>
+      )}
+
+      {/* Contenido de la Canción con Motor de Bloques Inteligentes */}
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 md:px-16 py-12">
         <div 
           ref={viewerRef}
-          className={`font-mono whitespace-pre leading-relaxed select-none transition-colors duration-500 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
+          className={`font-mono select-none transition-colors duration-500 flex flex-col gap-y-4 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
           style={{ fontSize: `${fontSize}px` }}
         >
-          {displayContent.split('\n').map((line, index) => (
+          {parsedLines.map((line, lIndex) => (
             <div 
-              key={index} 
-              className="group relative min-h-[1.5em] hover:bg-accent/5 transition-colors cursor-pointer rounded px-2 -mx-2"
-              onClick={() => !isStageMode && setEditingLine(index)}
+              key={lIndex} 
+              className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${
+                line.type === 'section' ? 'mt-6 mb-2 border-b border-muted pb-2' : 'hover:bg-accent/5'
+              }`}
+              onClick={() => !isStageMode && setEditingLine(lIndex)}
             >
-              {/* La línea de la canción */}
-              <div className={line.trim() === '' ? 'h-4' : ''}>
-                {line || ' '}
-              </div>
-
-              {/* Nota contextual flotante en el margen derecho */}
-              {musicianNotes[index] && (
-                <div className={`absolute left-full ml-6 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2.5 py-1 rounded-lg font-sans font-bold animate-in fade-in slide-in-from-left-2 shadow-lg flex items-center gap-2 group/note ${
-                  isStageMode 
-                    ? 'bg-yellow-500 text-black shadow-yellow-500/20' 
-                    : 'bg-muted border border-accent/30 text-accent shadow-black/20'
-                }`}>
-                  <div className="absolute left-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-inherit rotate-45 border-l border-b border-inherit" />
-                  <span>{musicianNotes[index]}</span>
-                  
-                  {!isStageMode && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newNotes = { ...musicianNotes };
-                        delete newNotes[index];
-                        setMusicianNotes(newNotes);
-                      }}
-                      className="opacity-0 group-hover/note:opacity-100 ml-1 hover:text-red-500 transition-all p-0.5"
-                      title="Eliminar nota"
-                    >
-                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+              {line.blocks.map((block, bIndex) => (
+                <div key={bIndex} className="relative flex flex-col min-w-[1ch]">
+                  {/* Acorde */}
+                  {block.chord && (
+                    <span className="text-accent font-bold h-6 mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300">
+                      {block.chord}
+                    </span>
                   )}
+                  {/* Texto */}
+                  <span className={`whitespace-pre leading-none ${line.type === 'section' ? 'text-accent font-bold uppercase tracking-widest text-xs' : ''}`}>
+                    {block.text || (block.chord ? ' ' : '')}
+                  </span>
+                </div>
+              ))}
+
+              {/* Nota del músico */}
+              {musicianNotes[lIndex] && (
+                <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${
+                  isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
+                }`}>
+                  <span>{musicianNotes[lIndex]}</span>
                 </div>
               )}
 
-              {/* Input para editar la nota */}
-              {editingLine === index && (
+              {/* Editor de notas */}
+              {editingLine === lIndex && (
                 <div className="absolute left-0 top-full z-20 mt-1 w-64 bg-muted border border-accent/30 rounded-xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-2">
                   <input
                     autoFocus
-                    className="w-full bg-transparent border-none focus:ring-0 text-xs text-foreground placeholder:text-muted-foreground/30"
-                    placeholder="Escribe una nota para esta línea..."
-                    value={musicianNotes[index] || ''}
+                    className="w-full bg-transparent border-none focus:ring-0 text-xs text-foreground"
+                    placeholder="Nota..."
+                    value={musicianNotes[lIndex] || ''}
                     onChange={(e) => {
                       const newNotes = { ...musicianNotes };
-                      if (e.target.value) {
-                        newNotes[index] = e.target.value;
-                      } else {
-                        delete newNotes[index];
-                      }
+                      if (e.target.value) newNotes[lIndex] = e.target.value;
+                      else delete newNotes[lIndex];
                       setMusicianNotes(newNotes);
                     }}
                     onBlur={() => setEditingLine(null)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') setEditingLine(null);
-                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && setEditingLine(null)}
                     onClick={(e) => e.stopPropagation()}
                   />
-                </div>
-              )}
-              
-              {/* Indicador de edición hover */}
-              {!musicianNotes[index] && !isStageMode && (
-                <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                  <svg className="w-3 h-3 text-muted-foreground/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
                 </div>
               )}
             </div>
@@ -489,27 +335,143 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
         </div>
       </div>
 
-      {/* Floating Exit Stage Mode (Solo en Stage Mode) */}
+      {/* Bottom Floating Bar */}
+      {!isStageMode && (
+        <>
+          {/* Controles móviles de lista (visibles solo en pantallas pequeñas) */}
+          {listSetlist && (
+            <div className="sm:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 bg-background/90 backdrop-blur-2xl px-2 py-1.5 rounded-full border border-muted shadow-xl">
+              <button 
+                onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
+                disabled={!prevListSongId}
+                className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <span className="text-xs font-bold text-muted-foreground min-w-[40px] text-center">
+                {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
+              </span>
+              <button 
+                onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
+                disabled={!nextListSongId}
+                className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl">
+            <div className="flex items-center bg-muted/40 rounded-full px-2">
+              <button onClick={() => setTranspose(prev => prev - 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">-</button>
+              <span className="w-10 text-center text-xs font-bold font-mono">{transpose > 0 ? `+${transpose}` : transpose}</span>
+              <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
+            </div>
+            <div className="w-px h-6 bg-muted mx-1" />
+            <button 
+              onClick={() => setIsScrolling(!isScrolling)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${isScrolling ? 'bg-white animate-pulse' : 'bg-muted-foreground'}`} />
+              {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
+            </button>
+            {isScrolling && (
+               <div className="flex items-center gap-1">
+                  <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
+                  <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
+               </div>
+            )}
+            <div className="w-px h-6 bg-muted mx-1" />
+            <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Settings Drawer */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />
+          <div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[32px] p-8 border-t border-muted shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+            <div className="w-12 h-1.5 bg-muted rounded-full mx-auto mb-8" />
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-2xl mx-auto">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Capodastro</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[0, 1, 2, 3, 4, 5].map(f => (
+                      <button 
+                        key={f}
+                        onClick={() => setCapo(f)}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${capo === f ? 'bg-accent border-accent text-white' : 'bg-muted/50 border-transparent text-muted-foreground'}`}
+                      >
+                        {f === 0 ? 'Sin Capo' : f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Zoom de Letra</label>
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => setFontSize(prev => Math.max(10, prev - 2))} className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">A-</button>
+                    <span className="text-xl font-bold font-mono">{fontSize}px</span>
+                    <button onClick={() => setFontSize(prev => Math.min(40, prev + 2))} className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold">A+</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Metrónomo (BPM)</label>
+                  <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-2xl">
+                    <input type="range" min="40" max="240" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="flex-1 accent-accent" />
+                    <span className="w-12 text-center font-bold text-accent">{bpm}</span>
+                    <button onClick={() => setIsMetronomeActive(!isMetronomeActive)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isMetronomeActive ? 'bg-accent text-white' : 'bg-muted'}`}>
+                      <div className={`w-2 h-2 rounded-full ${beat ? 'bg-white scale-150' : 'bg-current'} transition-all`} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 pt-4">
+                  <button onClick={() => toggleFavorite(id)} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border transition-all ${isFavorite(id) ? 'bg-accent/10 border-accent text-accent' : 'bg-muted/50 border-transparent text-muted-foreground'}`}>
+                    <svg className={`w-5 h-5 ${isFavorite(id) ? 'fill-current' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.175 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                    Favorito
+                  </button>
+                  {followSessionId && (
+                    <div className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border bg-green-500/10 border-green-500 text-green-500">
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                      </span>
+                      Siguiendo show
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button onClick={() => setIsSettingsOpen(false)} className="mt-8 w-full py-4 bg-accent text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-accent/90 transition-all">Listo</button>
+          </div>
+        </div>
+      )}
+
       {isStageMode && (
-        <button 
-          onClick={toggleStageMode}
-          className="fixed top-8 right-8 z-50 bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10"
-          title="Salir del Modo Escenario"
-        >
+        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-[100] bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       )}
-
-      {/* Floating Info (Mobile) */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-accent/90 backdrop-blur-md text-accent-foreground px-6 py-3 rounded-full shadow-2xl font-bold text-xs sm:hidden">
-        <span>Tono: {transpose > 0 ? `+${transpose}` : transpose}</span>
-        <span className="opacity-30">|</span>
-        <span>Capo: {capo}</span>
-        <span className="opacity-30">|</span>
-        <span>Zoom: {fontSize}px</span>
-      </div>
     </div>
   )
 }

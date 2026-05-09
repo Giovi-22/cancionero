@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
+import LiveShowBanner from "@/components/layout/LiveShowBanner";
 import SessionProvider from "@/components/providers/SessionProvider";
 import ServiceWorkerRegister from "@/components/providers/ServiceWorkerRegister";
 
@@ -43,10 +44,11 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="min-h-full flex flex-col bg-background text-foreground overflow-x-hidden">
         <SessionProvider>
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
+          <LiveShowBanner />
           <ServiceWorkerRegister />
         </SessionProvider>
       </body>
