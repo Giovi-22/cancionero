@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
 import { transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks, SongLineParsed } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSetlists } from '@/hooks/useSetlists'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +20,11 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const { data: session } = useSession()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const setlistId = searchParams.get('setlist')
+  // ?follow=[sessionId] = modo músico siguiendo al director
+  const followSessionId = searchParams.get('follow')
+  // ?list=[setlistId] = modo visualización de lista local
+  const listId = searchParams.get('list')
+  const { setlists } = useSetlists()
   
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
@@ -38,9 +43,9 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [isMetronomeActive, setIsMetronomeActive] = useState(false)
   const [beat, setBeat] = useState(false)
 
-  // Sincronización de Banda
-  const [isFollowingBand, setIsFollowingBand] = useState(false)
-  const { subscribeToSetlist, syncCurrentSong } = useSetlists()
+  // Live Session
+  const { mySession, updateCurrentSong, subscribeToSession } = useLiveSession()
+  const isDirectorOfLiveSession = mySession?.status === 'live'
 
   // Lógica de Metrónomo
   useEffect(() => {
@@ -55,24 +60,23 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     return () => clearInterval(interval)
   }, [isMetronomeActive, bpm])
 
-  // Lógica de Sincronización
+  // Músico: suscribirse al show y seguir la canción del director
   useEffect(() => {
-    if (isFollowingBand && setlistId) {
-      const unsubscribe = subscribeToSetlist(setlistId, (newSongId) => {
-        if (newSongId !== id) {
-          router.push(`/songs/${newSongId}?setlist=${setlistId}`)
-        }
-      })
-      return () => unsubscribe()
-    }
-  }, [isFollowingBand, setlistId, id, router, subscribeToSetlist])
+    if (!followSessionId) return
+    const unsub = subscribeToSession(followSessionId, (newSongId) => {
+      if (newSongId !== id) {
+        router.push(`/songs/${newSongId}?follow=${followSessionId}`)
+      }
+    })
+    return unsub
+  }, [followSessionId, id, router, subscribeToSession])
 
-  // Lógica de Líder
+  // Director: emitir la canción actual cuando cambia (si está en live)
   useEffect(() => {
-    if (setlistId && session?.user?.email) {
-      syncCurrentSong(setlistId, id)
+    if (isDirectorOfLiveSession) {
+      updateCurrentSong(id)
     }
-  }, [id, setlistId, session, syncCurrentSong])
+  }, [id, isDirectorOfLiveSession, updateCurrentSong])
 
   const viewerRef = useRef<HTMLDivElement>(null)
   const scrollRequestRef = useRef<number | null>(null)
@@ -195,6 +199,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     }
   }, [isScrolling, scrollSpeed])
 
+  // Lógica de Navegación de Lista Local
+  const listSetlist = listId ? setlists.find(s => s.id === listId) : null
+  const currentListIndex = listSetlist ? listSetlist.songIds.findIndex(songId => songId === id) : -1
+  const prevListSongId = currentListIndex > 0 && listSetlist ? listSetlist.songIds[currentListIndex - 1] : null
+  const nextListSongId = currentListIndex !== -1 && listSetlist && currentListIndex < listSetlist.songIds.length - 1 
+    ? listSetlist.songIds[currentListIndex + 1] 
+    : null
+
   return (
     <div className={`flex flex-col min-h-screen transition-colors duration-500 ${isStageMode ? 'bg-black' : 'bg-background'} pb-32`}>
       
@@ -211,6 +223,35 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Controles de Navegación de Lista Local */}
+            {listSetlist && (
+              <div className="hidden sm:flex items-center gap-1 bg-muted/40 rounded-full p-1 border border-muted mr-2">
+                <button 
+                  onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
+                  disabled={!prevListSongId}
+                  className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
+                  title="Canción anterior de la lista"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className="text-[10px] font-bold text-muted-foreground min-w-[36px] text-center px-1">
+                  {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
+                </span>
+                <button 
+                  onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
+                  disabled={!nextListSongId}
+                  className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
+                  title="Siguiente canción de la lista"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             <button 
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 hover:bg-muted rounded-full text-accent transition-colors relative"
@@ -296,39 +337,68 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
       {/* Bottom Floating Bar */}
       {!isStageMode && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl">
-          <div className="flex items-center bg-muted/40 rounded-full px-2">
-            <button onClick={() => setTranspose(prev => prev - 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">-</button>
-            <span className="w-10 text-center text-xs font-bold font-mono">{transpose > 0 ? `+${transpose}` : transpose}</span>
-            <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
-          </div>
-          <div className="w-px h-6 bg-muted mx-1" />
-          <button 
-            onClick={() => setIsScrolling(!isScrolling)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
-          >
-            <div className={`w-1.5 h-1.5 rounded-full ${isScrolling ? 'bg-white animate-pulse' : 'bg-muted-foreground'}`} />
-            {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
-          </button>
-          {isScrolling && (
-             <div className="flex items-center gap-1">
-                <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
-                <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
-             </div>
+        <>
+          {/* Controles móviles de lista (visibles solo en pantallas pequeñas) */}
+          {listSetlist && (
+            <div className="sm:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 bg-background/90 backdrop-blur-2xl px-2 py-1.5 rounded-full border border-muted shadow-xl">
+              <button 
+                onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
+                disabled={!prevListSongId}
+                className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <span className="text-xs font-bold text-muted-foreground min-w-[40px] text-center">
+                {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
+              </span>
+              <button 
+                onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
+                disabled={!nextListSongId}
+                className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           )}
-          <div className="w-px h-6 bg-muted mx-1" />
-          <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          </button>
-        </div>
+
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl">
+            <div className="flex items-center bg-muted/40 rounded-full px-2">
+              <button onClick={() => setTranspose(prev => prev - 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">-</button>
+              <span className="w-10 text-center text-xs font-bold font-mono">{transpose > 0 ? `+${transpose}` : transpose}</span>
+              <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
+            </div>
+            <div className="w-px h-6 bg-muted mx-1" />
+            <button 
+              onClick={() => setIsScrolling(!isScrolling)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${isScrolling ? 'bg-white animate-pulse' : 'bg-muted-foreground'}`} />
+              {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
+            </button>
+            {isScrolling && (
+               <div className="flex items-center gap-1">
+                  <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
+                  <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
+               </div>
+            )}
+            <div className="w-px h-6 bg-muted mx-1" />
+            <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </>
       )}
 
       {/* Settings Drawer */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 z-50 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[32px] p-8 border-t border-muted shadow-2xl animate-in slide-in-from-bottom-full duration-300">
             <div className="w-12 h-1.5 bg-muted rounded-full mx-auto mb-8" />
@@ -377,10 +447,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                     </svg>
                     Favorito
                   </button>
-                  {setlistId && (
-                    <button onClick={() => setIsFollowingBand(!isFollowingBand)} className={`flex-1 py-3 rounded-2xl font-bold border transition-all ${isFollowingBand ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-muted/50 border-transparent text-muted-foreground'}`}>
-                      {isFollowingBand ? '• Banda ON' : 'Seguir Banda'}
-                    </button>
+                  {followSessionId && (
+                    <div className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border bg-green-500/10 border-green-500 text-green-500">
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                      </span>
+                      Siguiendo show
+                    </div>
                   )}
                 </div>
               </div>
@@ -392,7 +466,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
       )}
 
       {isStageMode && (
-        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-50 bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
+        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-[100] bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Song } from '@/types/drive'
 import { useSetlists, Setlist } from '@/hooks/useSetlists'
+import { useLiveSession } from '@/hooks/useLiveSession'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
@@ -21,9 +22,13 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
     moveSongInSetlist,
     toggleSetlistPublic 
   } = useSetlists()
+  const { mySession, startShow, scheduleShow, goLiveNow, endShow } = useLiveSession()
   const [newSetName, setNewSetName] = useState('')
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null)
   const [isAddingSong, setIsAddingSong] = useState(false)
+  const [isSchedulingOpen, setIsSchedulingOpen] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState('')
+  const [scheduledTime, setScheduledTime] = useState('')
 
   // Auto-seleccionar si viene por URL o importar si hay data
   useEffect(() => {
@@ -76,6 +81,23 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
       setSelectedSetId(newSet.id)
     }
   }
+
+  const handleStartShow = async () => {
+    if (!selectedSet) return
+    const result = await startShow(selectedSet.id, selectedSet.name)
+    if (result?.error) {
+      alert(`Error al iniciar show:\n${result.error}\n\n¿Creaste la tabla "live_sessions" en Supabase?`)
+    }
+  }
+
+  const handleScheduleShow = async () => {
+    if (!selectedSet || !scheduledDate || !scheduledTime) return
+    const dt = new Date(`${scheduledDate}T${scheduledTime}`)
+    await scheduleShow(selectedSet.id, selectedSet.name, dt)
+    setIsSchedulingOpen(false)
+  }
+
+  const isMySessionThisList = mySession?.setlist_id === selectedSet?.id
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -140,48 +162,117 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
       <div className="lg:col-span-2 flex flex-col gap-6">
         {selectedSet ? (
           <div className="bg-muted/10 rounded-2xl p-6 sm:p-8 border border-muted min-h-[400px]">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-4 mb-8">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-2xl font-bold">{selectedSet.name}</h2>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => toggleSetlistPublic(selectedSet.id)}
-                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all border ${
-                      selectedSet.isPublic 
-                        ? 'bg-accent/10 border-accent/30 text-accent' 
-                        : 'bg-muted border-transparent text-muted-foreground'
-                    }`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full ${selectedSet.isPublic ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
-                    {selectedSet.isPublic ? 'Pública' : 'Privada'}
-                  </button>
-                  
-                  {selectedSet.isPublic && (
-                    <button 
-                      onClick={() => {
-                        const data = btoa(JSON.stringify({ name: selectedSet.name, songIds: selectedSet.songIds }));
-                        const url = `${window.location.origin}/setlists?import=${data}`;
-                        navigator.clipboard.writeText(url);
-                        alert('¡Enlace copiado! Pásalo a la banda para que importen la lista.');
-                      }}
-                      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-accent transition-colors"
-                    >
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                      </svg>
-                      Copiar enlace para la banda
-                    </button>
-                  )}
-                </div>
+                <button 
+                  onClick={() => setIsAddingSong(!isAddingSong)}
+                  className={`px-4 py-2 rounded-full text-sm font-bold transition-all border ${
+                    isAddingSong ? 'bg-muted border-muted text-foreground' : 'bg-accent border-accent text-accent-foreground hover:scale-105'
+                  }`}
+                >
+                  {isAddingSong ? 'Cerrar' : '+ Canción'}
+                </button>
               </div>
-              <button 
-                onClick={() => setIsAddingSong(!isAddingSong)}
-                className={`px-4 py-2 rounded-full text-sm font-bold transition-all border ${
-                  isAddingSong ? 'bg-muted border-muted text-foreground' : 'bg-accent border-accent text-accent-foreground hover:scale-105'
-                }`}
-              >
-                {isAddingSong ? 'Cerrar Buscador' : '+ Agregar Canción'}
-              </button>
+
+              {/* Controles de Show en Vivo */}
+              <div className="flex flex-wrap items-center gap-2">
+                {isMySessionThisList ? (
+                  // YA hay un show activo para ESTA lista
+                  mySession?.status === 'live' ? (
+                    <>
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                        </span>
+                        <span className="text-xs font-black text-red-500 uppercase tracking-wider">Show en vivo</span>
+                      </div>
+                      <button
+                        onClick={endShow}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border border-muted text-muted-foreground hover:text-red-500 hover:border-red-500/30 transition-all"
+                      >
+                        ⏹ Finalizar
+                      </button>
+                    </>
+                  ) : (
+                    // scheduled
+                    <>
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted border border-muted">
+                        <span className="text-xs font-black text-muted-foreground uppercase tracking-wider">📅 Programado</span>
+                      </div>
+                      <button
+                        onClick={goLiveNow}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-accent text-accent-foreground hover:bg-accent/90 transition-all"
+                      >
+                        ▶ Iniciar ahora
+                      </button>
+                      <button
+                        onClick={endShow}
+                        className="px-3 py-1.5 rounded-full text-xs font-bold border border-muted text-muted-foreground hover:text-red-500 hover:border-red-500/30 transition-all"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  )
+                ) : !mySession ? (
+                  // No hay ningún show activo aún
+                  <>
+                    <button
+                      onClick={handleStartShow}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-accent text-accent-foreground hover:bg-accent/90 transition-all active:scale-95 shadow-md shadow-accent/20"
+                    >
+                      ▶ Iniciar Show Ahora
+                    </button>
+                    <button
+                      onClick={() => setIsSchedulingOpen(!isSchedulingOpen)}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold border border-muted text-muted-foreground hover:text-accent hover:border-accent/40 transition-all"
+                    >
+                      📅 Programar
+                    </button>
+                  </>
+                ) : (
+                  // Hay sesión pero para otra lista
+                  <span className="text-[11px] text-muted-foreground italic">Tenés un show activo en otra lista</span>
+                )}
+              </div>
+
+              {/* Panel de programación */}
+              {isSchedulingOpen && !mySession && (
+                <div className="flex flex-wrap items-end gap-3 p-4 rounded-xl bg-muted/20 border border-muted animate-in fade-in slide-in-from-top-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Fecha</label>
+                    <input
+                      type="date"
+                      value={scheduledDate}
+                      onChange={e => setScheduledDate(e.target.value)}
+                      className="bg-muted/40 border border-muted rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Hora</label>
+                    <input
+                      type="time"
+                      value={scheduledTime}
+                      onChange={e => setScheduledTime(e.target.value)}
+                      className="bg-muted/40 border border-muted rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    />
+                  </div>
+                  <button
+                    onClick={handleScheduleShow}
+                    disabled={!scheduledDate || !scheduledTime}
+                    className="px-4 py-2 rounded-lg bg-accent text-accent-foreground text-sm font-bold hover:bg-accent/90 transition-all disabled:opacity-50"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    onClick={() => setIsSchedulingOpen(false)}
+                    className="px-4 py-2 rounded-lg border border-muted text-sm font-bold text-muted-foreground hover:text-foreground transition-all"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
             </div>
 
             {isAddingSong && (
@@ -238,7 +329,7 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
                       </button>
                     </div>
                     <Link 
-                      href={`/songs/${song.id}`}
+                      href={`/songs/${song.id}?list=${selectedSet.id}`}
                       className="flex-1 flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/50 border border-transparent hover:border-accent/30 transition-all"
                     >
                       <span 

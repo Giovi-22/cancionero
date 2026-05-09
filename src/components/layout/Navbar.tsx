@@ -48,6 +48,12 @@ export default function Navbar() {
               >
                 Mis Listas
               </Link>
+              <Link 
+                href="/settings" 
+                className="rounded-full bg-muted px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
+              >
+                Configuración
+              </Link>
               <div className="flex items-center gap-3 ml-2 border-l border-muted pl-4">
                 <div className="text-right">
                   <p className="text-xs font-medium text-foreground">{session.user?.name}</p>
@@ -149,6 +155,13 @@ export default function Navbar() {
                   className="block rounded-lg px-3 py-3 text-base font-medium text-foreground hover:bg-muted"
                 >
                   Mis Listas
+                </Link>
+                <Link 
+                  href="/settings" 
+                  onClick={() => setIsMenuOpen(false)}
+                  className="block rounded-lg px-3 py-3 text-base font-medium text-foreground hover:bg-muted"
+                >
+                  Configuración
                 </Link>
                 
                 <div className="mt-4 pt-4 border-t border-muted">

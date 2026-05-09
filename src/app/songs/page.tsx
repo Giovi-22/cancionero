@@ -3,16 +3,21 @@
 import { useState, useEffect } from 'react'
 import SongList from "@/components/songs/SongList"
 import { Song } from '@/types/drive'
+import { useAppSettings } from '@/hooks/useAppSettings'
 
 export default function SongsPage() {
   const [songs, setSongs] = useState<Song[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
+  const { settings, isLoading: isSettingsLoading } = useAppSettings()
+
   useEffect(() => {
     const loadSongs = async () => {
+      if (isSettingsLoading) return; // Esperar a que carguen las opciones
+
       // 1. Intentar cargar de sessionStorage para carga instantánea
-      const cached = sessionStorage.getItem('cancionero_full_repertoire')
+      const cached = sessionStorage.getItem(`cancionero_full_repertoire_${settings.driveFolderId}`)
       if (cached) {
         try {
           const data = JSON.parse(cached)
@@ -25,12 +30,16 @@ export default function SongsPage() {
 
       // 2. Si no hay cache, pedir a la API
       try {
-        const response = await fetch('/api/drive/songs')
+        const url = settings.driveFolderId 
+          ? `/api/drive/songs?folderId=${settings.driveFolderId}`
+          : '/api/drive/songs'
+        
+        const response = await fetch(url)
         if (!response.ok) throw new Error('Error al cargar')
         const data = await response.json()
         
         setSongs(data.songs)
-        sessionStorage.setItem('cancionero_full_repertoire', JSON.stringify(data.songs))
+        sessionStorage.setItem(`cancionero_full_repertoire_${settings.driveFolderId}`, JSON.stringify(data.songs))
         setLoading(false)
       } catch (e) {
         console.error(e)
@@ -40,7 +49,7 @@ export default function SongsPage() {
     }
 
     loadSongs()
-  }, [])
+  }, [settings.driveFolderId, isSettingsLoading])
 
   if (loading && songs.length === 0) {
     return (
