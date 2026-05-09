@@ -43,7 +43,7 @@ export default function SongList({ initialSongs }: SongListProps) {
   return (
     <div className="flex flex-col gap-8">
       {/* Search Bar & Filters */}
-      <div className="sticky top-20 z-40 -mx-4 px-4 py-4 bg-background/95 backdrop-blur-sm sm:static sm:bg-transparent sm:p-0">
+      <div className="sticky top-16 z-40 -mx-4 px-4 py-4 bg-background/95 backdrop-blur-sm sm:static sm:bg-transparent sm:p-0">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative group flex-1">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -112,7 +112,10 @@ export default function SongList({ initialSongs }: SongListProps) {
                     </svg>
                   )}
                 </div>
-                <h3 className="text-base font-medium text-foreground truncate group-hover:text-accent transition-colors">
+                <h3 
+                  className="text-base font-medium text-foreground line-clamp-2 group-hover:text-accent transition-colors"
+                  title={song.name}
+                >
                   {song.name}
                 </h3>
               </div>

@@ -241,7 +241,12 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
                       href={`/songs/${song.id}`}
                       className="flex-1 flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/50 border border-transparent hover:border-accent/30 transition-all"
                     >
-                      <span className="font-medium group-hover:text-accent transition-colors">{song.name}</span>
+                      <span 
+                        className="font-medium group-hover:text-accent transition-colors line-clamp-1"
+                        title={song.name}
+                      >
+                        {song.name}
+                      </span>
                       <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
