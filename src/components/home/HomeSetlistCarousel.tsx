@@ -123,7 +123,12 @@ export default function HomeSetlistCarousel({ allSongs }: HomeSetlistCarouselPro
                 <span className="text-[10px] uppercase tracking-widest text-accent font-bold">
                   {song.name.toLowerCase().includes('pdf') ? 'Partitura PDF' : 'Acordes Doc'}
                 </span>
-                <h3 className="text-xl font-bold text-foreground group-hover:text-accent transition-colors truncate">{song.name}</h3>
+                <h3 
+                  className="text-xl font-bold text-foreground group-hover:text-accent transition-colors line-clamp-2"
+                  title={song.name}
+                >
+                  {song.name}
+                </h3>
                 <p className="text-sm text-muted-foreground">Google Drive</p>
               </div>
 
