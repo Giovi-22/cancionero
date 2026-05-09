@@ -37,7 +37,9 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
     return <OfflineSongViewer id={id} />
   }
 
-  const isGoogleDoc = song!.mimeType === 'application/vnd.google-apps.document'
+  if (!song) return null;
+
+  const isGoogleDoc = song.mimeType === 'application/vnd.google-apps.document'
   const viewerUrl = song!.webViewLink?.replace('/view', '/preview') || ''
 
   return (
