@@ -252,6 +252,9 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
    * retrocede hasta el inicio de la palabra que contiene ese índice.
    * Si el índice ya es el inicio de una palabra (o hay un espacio antes),
    * lo devuelve tal cual.
+   * IMPORTANTE: si el acorde cae dentro de la primera palabra (sin espacios
+   * previos), retornamos 0 para que el acorde "adopte" la palabra completa
+   * desde el inicio, evitando el efecto ¿A+C pegados.
    */
   function snapToWordStart(pos: number, text: string): number {
     if (pos <= 0 || pos >= text.length) return pos
@@ -260,9 +263,11 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
     // Retroceder hasta encontrar un espacio (inicio de esta palabra)
     let i = pos - 1
     while (i > 0 && text[i] !== ' ') i--
-    // Si i===0 y no es espacio, significa que la palabra empieza en 0:
-    // devolver pos original para no perder el acorde
-    return text[i] === ' ' ? i + 1 : pos
+    // Si encontramos un espacio, el inicio de la palabra es i+1
+    if (text[i] === ' ') return i + 1
+    // No había espacio antes: el acorde cae dentro de la primera palabra.
+    // Devolvemos 0 para que el bloque tome desde el inicio de la línea.
+    return 0
   }
 
   // 2. Calculamos los puntos de corte del texto, ajustados a límites de palabras
