@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
-import { transposeText, trimCommonIndentation, cleanSongText } from '@/utils/chordUtils'
+import { transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks, SongLineParsed } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useSetlists } from '@/hooks/useSetlists'
 import { useSearchParams, useRouter } from 'next/navigation'
@@ -158,9 +158,13 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     return () => clearTimeout(timer)
   }, [id, transpose, capo, fontSize, musicianNotes, session])
 
-  const cleanedContent = cleanSongText(content)
-  const rawTransposed = transposeText(cleanedContent, transpose - capo)
-  const displayContent = trimCommonIndentation(rawTransposed)
+  // Lógica de Procesado de Canción
+  const parsedLines = useMemo(() => {
+    const cleaned = cleanSongText(content)
+    const transposed = transposeText(cleaned, transpose - capo)
+    const trimmed = trimCommonIndentation(transposed)
+    return parseSongToBlocks(trimmed)
+  }, [content, transpose, capo])
 
   // Motor de Auto-scroll
   useEffect(() => {
@@ -226,44 +230,57 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
         </header>
       )}
 
-      {/* Contenido de la Canción */}
+      {/* Contenido de la Canción con Motor de Bloques Inteligentes */}
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 md:px-16 py-12">
         <div 
           ref={viewerRef}
-          className={`font-mono whitespace-pre-wrap break-words leading-relaxed select-none transition-colors duration-500 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
+          className={`font-mono select-none transition-colors duration-500 flex flex-col gap-y-4 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
           style={{ fontSize: `${fontSize}px` }}
         >
-          {displayContent.split('\n').map((line, index) => (
+          {parsedLines.map((line, lIndex) => (
             <div 
-              key={index} 
-              className="group relative min-h-[1.5em] hover:bg-accent/5 transition-colors cursor-pointer rounded px-2 -mx-2"
-              onClick={() => !isStageMode && setEditingLine(index)}
+              key={lIndex} 
+              className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${
+                line.type === 'section' ? 'mt-6 mb-2 border-b border-muted pb-2' : 'hover:bg-accent/5'
+              }`}
+              onClick={() => !isStageMode && setEditingLine(lIndex)}
             >
-              <div className={line.trim() === '' ? 'h-4' : ''}>
-                {line || ' '}
-              </div>
+              {line.blocks.map((block, bIndex) => (
+                <div key={bIndex} className="relative flex flex-col min-w-[1ch]">
+                  {/* Acorde */}
+                  {block.chord && (
+                    <span className="text-accent font-bold h-6 mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300">
+                      {block.chord}
+                    </span>
+                  )}
+                  {/* Texto */}
+                  <span className={`whitespace-pre leading-none ${line.type === 'section' ? 'text-accent font-bold uppercase tracking-widest text-xs' : ''}`}>
+                    {block.text || (block.chord ? ' ' : '')}
+                  </span>
+                </div>
+              ))}
 
-              {/* Nota contextual */}
-              {musicianNotes[index] && (
-                <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 ${
+              {/* Nota del músico */}
+              {musicianNotes[lIndex] && (
+                <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${
                   isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
                 }`}>
-                  <span>{musicianNotes[index]}</span>
+                  <span>{musicianNotes[lIndex]}</span>
                 </div>
               )}
 
-              {/* Input nota */}
-              {editingLine === index && (
+              {/* Editor de notas */}
+              {editingLine === lIndex && (
                 <div className="absolute left-0 top-full z-20 mt-1 w-64 bg-muted border border-accent/30 rounded-xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-2">
                   <input
                     autoFocus
                     className="w-full bg-transparent border-none focus:ring-0 text-xs text-foreground"
                     placeholder="Nota..."
-                    value={musicianNotes[index] || ''}
+                    value={musicianNotes[lIndex] || ''}
                     onChange={(e) => {
                       const newNotes = { ...musicianNotes };
-                      if (e.target.value) newNotes[index] = e.target.value;
-                      else delete newNotes[index];
+                      if (e.target.value) newNotes[lIndex] = e.target.value;
+                      else delete newNotes[lIndex];
                       setMusicianNotes(newNotes);
                     }}
                     onBlur={() => setEditingLine(null)}
@@ -277,17 +294,15 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
         </div>
       </div>
 
-      {/* Bottom Floating Bar - Quick Controls */}
+      {/* Bottom Floating Bar */}
       {!isStageMode && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl animate-in slide-in-from-bottom-8 duration-500">
-          {/* Tono */}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl">
           <div className="flex items-center bg-muted/40 rounded-full px-2">
             <button onClick={() => setTranspose(prev => prev - 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">-</button>
             <span className="w-10 text-center text-xs font-bold font-mono">{transpose > 0 ? `+${transpose}` : transpose}</span>
             <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
           </div>
           <div className="w-px h-6 bg-muted mx-1" />
-          {/* Scroll Toggle */}
           <button 
             onClick={() => setIsScrolling(!isScrolling)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
@@ -302,7 +317,6 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
              </div>
           )}
           <div className="w-px h-6 bg-muted mx-1" />
-          {/* Stage Button (Mobile) */}
           <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -312,7 +326,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
         </div>
       )}
 
-      {/* Settings Drawer (Bottom Sheet) */}
+      {/* Settings Drawer */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />
@@ -320,9 +334,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             <div className="w-12 h-1.5 bg-muted rounded-full mx-auto mb-8" />
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-2xl mx-auto">
-              {/* Columna 1 */}
               <div className="space-y-6">
-                {/* Capodastro */}
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Capodastro</label>
                   <div className="flex flex-wrap gap-2">
@@ -337,8 +349,6 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                     ))}
                   </div>
                 </div>
-
-                {/* Zoom */}
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Zoom de Letra</label>
                   <div className="flex items-center gap-4">
@@ -349,42 +359,26 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                 </div>
               </div>
 
-              {/* Columna 2 */}
               <div className="space-y-6">
-                {/* Metrónomo */}
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Metrónomo (BPM)</label>
                   <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-2xl">
-                    <input 
-                      type="range" min="40" max="240" value={bpm} onChange={(e) => setBpm(Number(e.target.value))}
-                      className="flex-1 accent-accent"
-                    />
+                    <input type="range" min="40" max="240" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="flex-1 accent-accent" />
                     <span className="w-12 text-center font-bold text-accent">{bpm}</span>
-                    <button 
-                      onClick={() => setIsMetronomeActive(!isMetronomeActive)}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isMetronomeActive ? 'bg-accent text-white' : 'bg-muted'}`}
-                    >
+                    <button onClick={() => setIsMetronomeActive(!isMetronomeActive)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isMetronomeActive ? 'bg-accent text-white' : 'bg-muted'}`}>
                       <div className={`w-2 h-2 rounded-full ${beat ? 'bg-white scale-150' : 'bg-current'} transition-all`} />
                     </button>
                   </div>
                 </div>
-
-                {/* Acciones Rápidas */}
                 <div className="flex items-center gap-4 pt-4">
-                  <button 
-                    onClick={() => toggleFavorite(id)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border transition-all ${isFavorite(id) ? 'bg-accent/10 border-accent text-accent' : 'bg-muted/50 border-transparent text-muted-foreground'}`}
-                  >
+                  <button onClick={() => toggleFavorite(id)} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border transition-all ${isFavorite(id) ? 'bg-accent/10 border-accent text-accent' : 'bg-muted/50 border-transparent text-muted-foreground'}`}>
                     <svg className={`w-5 h-5 ${isFavorite(id) ? 'fill-current' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.175 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                     </svg>
-                    {isFavorite(id) ? 'Favorito' : 'Favorito'}
+                    Favorito
                   </button>
                   {setlistId && (
-                    <button 
-                      onClick={() => setIsFollowingBand(!isFollowingBand)}
-                      className={`flex-1 py-3 rounded-2xl font-bold border transition-all ${isFollowingBand ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-muted/50 border-transparent text-muted-foreground'}`}
-                    >
+                    <button onClick={() => setIsFollowingBand(!isFollowingBand)} className={`flex-1 py-3 rounded-2xl font-bold border transition-all ${isFollowingBand ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-muted/50 border-transparent text-muted-foreground'}`}>
                       {isFollowingBand ? '• Banda ON' : 'Seguir Banda'}
                     </button>
                   )}
@@ -392,22 +386,13 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               </div>
             </div>
 
-            <button 
-              onClick={() => setIsSettingsOpen(false)}
-              className="mt-8 w-full py-4 bg-accent text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-accent/90 transition-all"
-            >
-              Listo
-            </button>
+            <button onClick={() => setIsSettingsOpen(false)} className="mt-8 w-full py-4 bg-accent text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-accent/90 transition-all">Listo</button>
           </div>
         </div>
       )}
 
-      {/* Stage Mode Exit Button */}
       {isStageMode && (
-        <button 
-          onClick={toggleStageMode}
-          className="fixed top-8 right-8 z-50 bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10"
-        >
+        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-50 bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>

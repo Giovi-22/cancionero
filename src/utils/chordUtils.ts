@@ -2,6 +2,16 @@
 const NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
+export interface SongBlock {
+  chord?: string;
+  text: string;
+}
+
+export interface SongLineParsed {
+  type: 'chords-lyrics' | 'text' | 'section';
+  blocks: SongBlock[];
+}
+
 /**
  * Normaliza un nombre de nota a su índice en la escala cromática (0-11)
  */
@@ -169,6 +179,141 @@ export function cleanSongText(text: string): string {
  * Si el capo está en el traste 4, y quiero ver los acordes "fáciles",
  * tengo que restar 4 semitonos a la visualización.
  */
-export function getCapoOffset(capoFret: number): number {
-  return -capoFret;
+/**
+ * Parsea el texto de una canción a una estructura de bloques inteligentes
+ * que permiten un diseño responsive donde los acordes siguen a la letra.
+ */
+export function parseSongToBlocks(text: string): SongLineParsed[] {
+  const lines = text.split('\n');
+  const result: SongLineParsed[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const currentLine = lines[i];
+    const nextLine = lines[i + 1];
+
+    // Caso A: Línea de acordes seguida de letra
+    if (isChordLine(currentLine) && nextLine !== undefined && !isChordLine(nextLine) && nextLine.trim() !== '') {
+      result.push(parseChordsAndLyrics(currentLine, nextLine));
+      i++; // Saltamos la línea de letra porque ya la procesamos
+      continue;
+    }
+
+    // Caso B: Solo una línea de acordes (intro, instrumental, etc)
+    if (isChordLine(currentLine)) {
+      result.push({
+        type: 'chords-lyrics',
+        blocks: parseChordsOnly(currentLine)
+      });
+      continue;
+    }
+
+    // Caso C: Encabezado de sección [CORO]
+    if (currentLine.trim().startsWith('[')) {
+      result.push({
+        type: 'section',
+        blocks: [{ text: currentLine.trim() }]
+      });
+      continue;
+    }
+
+    // Caso D: Línea de texto normal
+    result.push({
+      type: 'text',
+      blocks: [{ text: currentLine }]
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Función interna para emparejar una línea de acordes con una de letra.
+ * Respeta los límites de palabras: si un acorde cae en medio de una palabra,
+ * se ajusta la división al inicio de esa palabra, para que nunca se corte
+ * una palabra entre dos bloques.
+ */
+function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLineParsed {
+  const blocks: SongBlock[] = []
+
+  // 1. Encontramos todos los acordes y sus posiciones
+  const chordRegex = /\S+/g
+  let match
+  const chords: { chord: string; index: number }[] = []
+  while ((match = chordRegex.exec(chordLine)) !== null) {
+    chords.push({ chord: match[0], index: match.index })
+  }
+
+  if (chords.length === 0) {
+    return { type: 'text', blocks: [{ text: lyricLine }] }
+  }
+
+  /**
+   * Función auxiliar: dado un índice de carácter en la línea de letra,
+   * retrocede hasta el inicio de la palabra que contiene ese índice.
+   * Si el índice ya es el inicio de una palabra (o hay un espacio antes),
+   * lo devuelve tal cual.
+   * IMPORTANTE: si el acorde cae dentro de la primera palabra (sin espacios
+   * previos), retornamos 0 para que el acorde "adopte" la palabra completa
+   * desde el inicio, evitando el efecto ¿A+C pegados.
+   */
+  function snapToWordStart(pos: number, text: string): number {
+    if (pos <= 0 || pos >= text.length) return pos
+    // Si el carácter en `pos` es un espacio, ya estamos en un buen límite
+    if (text[pos] === ' ') return pos
+    // Retroceder hasta encontrar un espacio (inicio de esta palabra)
+    let i = pos - 1
+    while (i > 0 && text[i] !== ' ') i--
+    // Si encontramos un espacio, el inicio de la palabra es i+1
+    if (text[i] === ' ') return i + 1
+    // No había espacio antes: el acorde cae dentro de la primera palabra.
+    // Devolvemos 0 para que el bloque tome desde el inicio de la línea.
+    return 0
+  }
+
+  // 2. Calculamos los puntos de corte del texto, ajustados a límites de palabras
+  const cutPoints: number[] = []
+  for (const c of chords) {
+    cutPoints.push(snapToWordStart(c.index, lyricLine))
+  }
+
+  // 3. Texto antes del primer acorde (si el primer corte no es el inicio)
+  if (cutPoints[0] > 0) {
+    blocks.push({ text: lyricLine.substring(0, cutPoints[0]) })
+  }
+
+  // 4. Emparejamos cada acorde con el segmento de texto correspondiente
+  for (let i = 0; i < chords.length; i++) {
+    const textStart = cutPoints[i]
+    const textEnd = i + 1 < cutPoints.length
+      ? cutPoints[i + 1]
+      : lyricLine.length // Último acorde toma el resto de la línea
+
+    const text = lyricLine.substring(textStart, textEnd)
+
+    blocks.push({
+      chord: chords[i].chord,
+      text: text || ' ', // Espacio mínimo para que el bloque tenga altura
+    })
+  }
+
+  return { type: 'chords-lyrics', blocks }
+}
+
+
+/**
+ * Función interna para líneas que solo contienen acordes
+ */
+function parseChordsOnly(line: string): SongBlock[] {
+  const blocks: SongBlock[] = [];
+  const chordRegex = /[^\s]+/g;
+  let match;
+  
+  while ((match = chordRegex.exec(line)) !== null) {
+    blocks.push({
+      chord: match[0],
+      text: ' '.repeat(match[0].length + 2) // Añadimos espacio visual entre acordes instrumentales
+    });
+  }
+  
+  return blocks;
 }
