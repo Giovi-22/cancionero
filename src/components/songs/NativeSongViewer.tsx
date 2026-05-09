@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { supabase } from '@/lib/supabase'
 import { transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks, SongLineParsed } from '@/utils/chordUtils'
 import { useFavorites } from '@/hooks/useFavorites'
-import { useSetlists } from '@/hooks/useSetlists'
+import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -19,7 +19,8 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const { data: session } = useSession()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const setlistId = searchParams.get('setlist')
+  // ?follow=[sessionId] = modo músico siguiendo al director
+  const followSessionId = searchParams.get('follow')
   
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
@@ -38,9 +39,9 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [isMetronomeActive, setIsMetronomeActive] = useState(false)
   const [beat, setBeat] = useState(false)
 
-  // Sincronización de Banda
-  const [isFollowingBand, setIsFollowingBand] = useState(false)
-  const { subscribeToSetlist, syncCurrentSong } = useSetlists()
+  // Live Session
+  const { mySession, updateCurrentSong, subscribeToSession } = useLiveSession()
+  const isDirectorOfLiveSession = mySession?.status === 'live'
 
   // Lógica de Metrónomo
   useEffect(() => {
@@ -55,24 +56,23 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
     return () => clearInterval(interval)
   }, [isMetronomeActive, bpm])
 
-  // Lógica de Sincronización
+  // Músico: suscribirse al show y seguir la canción del director
   useEffect(() => {
-    if (isFollowingBand && setlistId) {
-      const unsubscribe = subscribeToSetlist(setlistId, (newSongId) => {
-        if (newSongId !== id) {
-          router.push(`/songs/${newSongId}?setlist=${setlistId}`)
-        }
-      })
-      return () => unsubscribe()
-    }
-  }, [isFollowingBand, setlistId, id, router, subscribeToSetlist])
+    if (!followSessionId) return
+    const unsub = subscribeToSession(followSessionId, (newSongId) => {
+      if (newSongId !== id) {
+        router.push(`/songs/${newSongId}?follow=${followSessionId}`)
+      }
+    })
+    return unsub
+  }, [followSessionId, id, router, subscribeToSession])
 
-  // Lógica de Líder
+  // Director: emitir la canción actual cuando cambia (si está en live)
   useEffect(() => {
-    if (setlistId && session?.user?.email) {
-      syncCurrentSong(setlistId, id)
+    if (isDirectorOfLiveSession) {
+      updateCurrentSong(id)
     }
-  }, [id, setlistId, session, syncCurrentSong])
+  }, [id, isDirectorOfLiveSession, updateCurrentSong])
 
   const viewerRef = useRef<HTMLDivElement>(null)
   const scrollRequestRef = useRef<number | null>(null)
@@ -328,7 +328,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
       {/* Settings Drawer */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 z-50 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[32px] p-8 border-t border-muted shadow-2xl animate-in slide-in-from-bottom-full duration-300">
             <div className="w-12 h-1.5 bg-muted rounded-full mx-auto mb-8" />
@@ -377,10 +377,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                     </svg>
                     Favorito
                   </button>
-                  {setlistId && (
-                    <button onClick={() => setIsFollowingBand(!isFollowingBand)} className={`flex-1 py-3 rounded-2xl font-bold border transition-all ${isFollowingBand ? 'bg-green-500/10 border-green-500 text-green-500' : 'bg-muted/50 border-transparent text-muted-foreground'}`}>
-                      {isFollowingBand ? '• Banda ON' : 'Seguir Banda'}
-                    </button>
+                  {followSessionId && (
+                    <div className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold border bg-green-500/10 border-green-500 text-green-500">
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                      </span>
+                      Siguiendo show
+                    </div>
                   )}
                 </div>
               </div>
@@ -392,7 +396,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
       )}
 
       {isStageMode && (
-        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-50 bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
+        <button onClick={toggleStageMode} className="fixed top-8 right-8 z-[100] bg-white/10 hover:bg-white/20 text-white/50 hover:text-white p-4 rounded-full backdrop-blur-md transition-all border border-white/10">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
+import LiveShowBanner from "@/components/layout/LiveShowBanner";
 import SessionProvider from "@/components/providers/SessionProvider";
 import ServiceWorkerRegister from "@/components/providers/ServiceWorkerRegister";
 
@@ -47,6 +48,7 @@ export default function RootLayout({
         <SessionProvider>
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
+          <LiveShowBanner />
           <ServiceWorkerRegister />
         </SessionProvider>
       </body>
