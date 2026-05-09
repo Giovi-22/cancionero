@@ -329,7 +329,7 @@ export default function SetlistManager({ allSongs }: SetlistManagerProps) {
                       </button>
                     </div>
                     <Link 
-                      href={`/songs/${song.id}`}
+                      href={`/songs/${song.id}?list=${selectedSet.id}`}
                       className="flex-1 flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/50 border border-transparent hover:border-accent/30 transition-all"
                     >
                       <span 

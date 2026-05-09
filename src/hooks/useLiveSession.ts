@@ -171,10 +171,14 @@ export function useLiveSession() {
 
   const updateCurrentSong = useCallback(async (songId: string) => {
     if (!mySession || mySession.status !== 'live') return
-    await supabase
-      .from('live_sessions')
-      .update({ current_song_id: songId })
-      .eq('id', mySession.id)
+    try {
+      await supabase
+        .from('live_sessions')
+        .update({ current_song_id: songId })
+        .eq('id', mySession.id)
+    } catch (e) {
+      console.warn('Sincronización ignorada (posiblemente offline):', e)
+    }
   }, [mySession?.id, mySession?.status])  // eslint-disable-line
 
   // ── Modo seguidor ──────────────────────────

@@ -5,13 +5,26 @@ import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSetlists } from '@/hooks/useSetlists'
+import { useAppSettings } from '@/hooks/useAppSettings'
+import { CacheService } from '@/services/CacheService'
 
 export default function LiveShowBanner() {
   const { data: session } = useSession()
   const router = useRouter()
   const { liveSessions, mySession, endShow } = useLiveSession()
   const { setlists } = useSetlists()
+  const { settings } = useAppSettings()
   const [dismissed, setDismissed] = useState<string[]>([])
+
+  // Pre-fetch de canciones para caché offline (Director)
+  useEffect(() => {
+    if (mySession?.status === 'live') {
+      const activeSetlist = setlists.find(s => s.id === mySession.setlist_id)
+      if (activeSetlist) {
+        CacheService.prefetchSongs(activeSetlist.songIds, settings.driveFolderId)
+      }
+    }
+  }, [mySession?.status, mySession?.setlist_id, setlists, settings.driveFolderId])
 
   // Las sesiones live que NO son mías (para músicos)
   const otherLiveSessions = liveSessions.filter(

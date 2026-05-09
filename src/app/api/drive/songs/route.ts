@@ -1,10 +1,12 @@
 import { auth } from "@/auth";
 import { driveService } from "@/services/DriveService";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth();
-  const folderId = process.env.DRIVE_SHARED_FOLDER_ID;
+  const searchParams = request.nextUrl.searchParams;
+  const customFolderId = searchParams.get('folderId');
+  const folderId = customFolderId || process.env.DRIVE_SHARED_FOLDER_ID;
 
   if (!session?.accessToken || !folderId) {
     return NextResponse.json({ error: "No autorizado o falta folderId" }, { status: 401 });

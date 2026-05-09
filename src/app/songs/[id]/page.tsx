@@ -4,6 +4,8 @@ import { driveService } from "@/services/DriveService"
 import Link from "next/link"
 import NativeSongViewer from "@/components/songs/NativeSongViewer"
 
+import OfflineSongViewer from "@/components/songs/OfflineSongViewer"
+
 interface SongDetailsPageProps {
   params: Promise<{ id: string }>
 }
@@ -18,6 +20,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
 
   let song;
   let content = "";
+  let isOffline = false;
   
   try {
     song = await driveService.getSongDetails(session.accessToken, id)
@@ -27,11 +30,15 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
       content = await driveService.getSongContent(session.accessToken, id)
     }
   } catch (error) {
-    notFound()
+    isOffline = true;
   }
 
-  const isGoogleDoc = song.mimeType === 'application/vnd.google-apps.document'
-  const viewerUrl = song.webViewLink?.replace('/view', '/preview') || ''
+  if (isOffline) {
+    return <OfflineSongViewer id={id} />
+  }
+
+  const isGoogleDoc = song!.mimeType === 'application/vnd.google-apps.document'
+  const viewerUrl = song!.webViewLink?.replace('/view', '/preview') || ''
 
   return (
     <div className="flex flex-col min-h-screen bg-black">
