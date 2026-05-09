@@ -32,6 +32,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [isScrolling, setIsScrolling] = useState(false)
   const [scrollSpeed, setScrollSpeed] = useState(1)
   const [isStageMode, setIsStageMode] = useState(false)
+  const [viewMode, setViewMode] = useState<'all' | 'lyrics' | 'chords'>('all')
   const [musicianNotes, setMusicianNotes] = useState<Record<number, string>>({})
   const [editingLine, setEditingLine] = useState<number | null>(null)
   const [showNotes, setShowNotes] = useState(true)
@@ -278,60 +279,86 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           className={`font-mono select-none transition-colors duration-500 flex flex-col gap-y-4 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
           style={{ fontSize: `${fontSize}px` }}
         >
-          {parsedLines.map((line, lIndex) => (
-            <div 
-              key={lIndex} 
-              className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${
-                line.type === 'section' ? 'mt-6 mb-2 border-b border-muted pb-2' : 'hover:bg-accent/5'
-              }`}
-              onClick={() => !isStageMode && setEditingLine(lIndex)}
-            >
-              {line.blocks.map((block, bIndex) => (
-                <div key={bIndex} className="relative flex flex-col min-w-[1ch]">
-                  {/* Acorde */}
-                  {block.chord && (
-                    <span className="text-accent font-bold h-6 mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300">
-                      {block.chord}
-                    </span>
-                  )}
-                  {/* Texto */}
-                  <span className={`whitespace-pre leading-none ${line.type === 'section' ? 'text-accent font-bold uppercase tracking-widest text-xs' : ''}`}>
-                    {block.text || (block.chord ? ' ' : '')}
-                  </span>
-                </div>
-              ))}
+          {parsedLines.map((line, lIndex) => {
+            const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
+            const sectionColor = isStageMode ? 'text-yellow-400' : 'text-blue-500';
 
-              {/* Nota del músico */}
-              {musicianNotes[lIndex] && (
-                <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${
-                  isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
-                }`}>
-                  <span>{musicianNotes[lIndex]}</span>
-                </div>
-              )}
+            // Si estamos en modo acordes, ocultar líneas de solo texto
+            if (viewMode === 'chords' && line.type === 'text') return null;
+            // Si estamos en modo acordes y la línea no tiene acordes y no es sección, no mostrar
+            if (viewMode === 'chords' && line.type === 'chords-lyrics' && !line.blocks.some(b => b.chord)) return null;
 
-              {/* Editor de notas */}
-              {editingLine === lIndex && (
-                <div className="absolute left-0 top-full z-20 mt-1 w-64 bg-muted border border-accent/30 rounded-xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-2">
-                  <input
-                    autoFocus
-                    className="w-full bg-transparent border-none focus:ring-0 text-xs text-foreground"
-                    placeholder="Nota..."
-                    value={musicianNotes[lIndex] || ''}
-                    onChange={(e) => {
-                      const newNotes = { ...musicianNotes };
-                      if (e.target.value) newNotes[lIndex] = e.target.value;
-                      else delete newNotes[lIndex];
-                      setMusicianNotes(newNotes);
-                    }}
-                    onBlur={() => setEditingLine(null)}
-                    onKeyDown={(e) => e.key === 'Enter' && setEditingLine(null)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+            return (
+              <div 
+                key={lIndex} 
+                className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${
+                  line.type === 'section' ? (isTitle ? 'mt-8 mb-6' : 'mt-6 mb-2 border-b border-muted/30 pb-2') : 'hover:bg-accent/5'
+                } ${isTitle ? 'justify-center w-full' : ''}`}
+                onClick={() => !isStageMode && setEditingLine(lIndex)}
+              >
+                {line.blocks.map((block, bIndex) => (
+                  <div key={bIndex} className={`relative flex flex-col min-w-[1ch] ${isTitle ? 'items-center w-full' : ''}`}>
+                    {/* Acorde */}
+                    {block.chord && viewMode !== 'lyrics' && (
+                      <span className={`text-accent font-bold mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300 ${viewMode === 'chords' ? 'h-auto' : 'h-6'}`}>
+                        {block.chord}
+                      </span>
+                    )}
+                    {/* Espaciador para mantener altura si no hay acorde y estamos en modo 'all' */}
+                    {!block.chord && viewMode === 'all' && line.type === 'chords-lyrics' && (
+                       <span className="h-6 mb-1 block select-none"> </span>
+                    )}
+                    {/* Texto */}
+                    {viewMode !== 'chords' || line.type === 'section' ? (
+                      <span className={`whitespace-pre leading-none ${
+                        line.type === 'section' 
+                          ? `${sectionColor} font-bold tracking-widest ${isTitle ? 'text-2xl sm:text-3xl uppercase text-center' : 'text-xs uppercase'}` 
+                          : ''
+                        }`}
+                      >
+                        {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() || '[TÍTULO]' : (block.text || (block.chord && viewMode === 'all' ? ' ' : ''))}
+                      </span>
+                    ) : (
+                      // En modo acordes, necesitamos mantener el espacio horizontal si había texto
+                      <span className="whitespace-pre leading-none select-none opacity-0 text-[0px]">
+                        {block.text || (block.chord ? ' ' : '')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+
+                {/* Nota del músico */}
+                {musicianNotes[lIndex] && (
+                  <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${
+                    isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
+                  }`}>
+                    <span>{musicianNotes[lIndex]}</span>
+                  </div>
+                )}
+
+                {/* Editor de notas */}
+                {editingLine === lIndex && (
+                  <div className="absolute left-0 top-full z-20 mt-1 w-64 bg-muted border border-accent/30 rounded-xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-2">
+                    <input
+                      autoFocus
+                      className="w-full bg-transparent border-none focus:ring-0 text-xs text-foreground"
+                      placeholder="Nota..."
+                      value={musicianNotes[lIndex] || ''}
+                      onChange={(e) => {
+                        const newNotes = { ...musicianNotes };
+                        if (e.target.value) newNotes[lIndex] = e.target.value;
+                        else delete newNotes[lIndex];
+                        setMusicianNotes(newNotes);
+                      }}
+                      onBlur={() => setEditingLine(null)}
+                      onKeyDown={(e) => e.key === 'Enter' && setEditingLine(null)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -385,7 +412,32 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                   <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
                </div>
             )}
+            <div className="w-px h-6 bg-muted mx-1 hidden sm:block" />
+            
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-muted/40 rounded-full p-1">
+              <button 
+                onClick={() => setViewMode('all')}
+                className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'all' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Todo
+              </button>
+              <button 
+                onClick={() => setViewMode('lyrics')}
+                className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'lyrics' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Letra
+              </button>
+              <button 
+                onClick={() => setViewMode('chords')}
+                className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'chords' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Acordes
+              </button>
+            </div>
+            
             <div className="w-px h-6 bg-muted mx-1" />
+            
             <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
