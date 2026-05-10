@@ -91,4 +91,38 @@ export class SyncService {
       // Ignorar fallos individuales
     }
   }
+
+  /**
+   * Pre-carga una lista de canciones específicas en el caché.
+   * Útil para cuando se inicia un show y queremos asegurar que todo el setlist esté offline.
+   */
+  public static async prefetchSongs(songIds: string[], folderId?: string) {
+    try {
+      // 1. Obtener el repertorio (índice) para tener la metadata (modifiedTime, etc)
+      const repertoire = await CacheService.getRepertoire(folderId || 'root');
+      if (!repertoire) return;
+
+      // 2. Filtrar solo las canciones que están en la lista y son documentos de Google
+      const songsToPrefetch = repertoire.filter(s => 
+        songIds.includes(s.id) && 
+        s.mimeType === 'application/vnd.google-apps.document'
+      );
+
+      // 3. Descargar las que falten o estén viejas (usamos el método de descarga por lotes que ya existe)
+      const songsToDownload: Song[] = [];
+      for (const song of songsToPrefetch) {
+        const localMeta = await CacheService.getSongMetadata(song.id);
+        if (!localMeta || localMeta.lastModified !== song.modifiedTime) {
+          songsToDownload.push(song);
+        }
+      }
+
+      if (songsToDownload.length > 0) {
+        console.log(`Prefetching ${songsToDownload.length} songs for live show...`);
+        await this.downloadSongsInBatches(songsToDownload, folderId);
+      }
+    } catch (error) {
+      console.warn('Error en prefetchSongs:', error);
+    }
+  }
 }

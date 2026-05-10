@@ -7,6 +7,7 @@ import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSetlists } from '@/hooks/useSetlists'
 import { useAppSettings } from '@/hooks/useAppSettings'
 import { CacheService } from '@/services/CacheService'
+import { SyncService } from '@/services/SyncService'
 
 export default function LiveShowBanner() {
   const { data: session } = useSession()
@@ -21,7 +22,7 @@ export default function LiveShowBanner() {
     if (mySession?.status === 'live') {
       const activeSetlist = setlists.find(s => s.id === mySession.setlist_id)
       if (activeSetlist) {
-        CacheService.prefetchSongs(activeSetlist.songIds, settings.driveFolderId)
+        SyncService.prefetchSongs(activeSetlist.songIds, settings.driveFolderId)
       }
     }
   }, [mySession?.status, mySession?.setlist_id, setlists, settings.driveFolderId])

@@ -59,27 +59,46 @@ function transposeNote(note: string, semitones: number): string {
 }
 
 /**
+ * Detecta si una línea es de metadatos (ej: "Intro:", "Tono: F#", etc.)
+ */
+export function isMetadataLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  // Match lines that start with a known label followed by a colon
+  return /^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo):/i.test(trimmed);
+}
+
+/**
  * Detecta si una línea de texto es probablemente una línea de acordes
  */
 export function isChordLine(line: string): boolean {
-  // Eliminar espacios
   const trimmed = line.trim();
   if (!trimmed) return false;
 
-  // Un criterio simple: la mayoría de los "tokens" deben parecer acordes
-  const tokens = trimmed.split(/\s+/);
-  // Regex estricto para acordes (evita coincidencias falsas con palabras como "Gloria" o "Dios")
-  const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add)?\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
+  // Regex estricto para acordes (soporta tensiones, bajos y paréntesis)
+  const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|sus|add|dim|aug|maj|min)*\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
   
+  // Si la línea es de metadatos, NO la tratamos como una línea de acordes estándar
+  // para evitar que se pinte con colores de acordes y se mueva de lugar.
+  if (isMetadataLine(trimmed)) return false;
+
+  // Limpiar etiquetas al principio para el conteo
+  const cleanTrimmed = trimmed.replace(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo):\s*/i, '');
+  if (!cleanTrimmed) return false;
+  
+  const tokens = cleanTrimmed.split(/\s+/).filter(t => t.length > 0);
+  if (tokens.length === 0) return false;
+
   let chordCount = 0;
   for (const token of tokens) {
-    if (chordRegex.test(token)) {
+    // Si el token es un acorde o un símbolo de repetición/duración común
+    if (chordRegex.test(token) || /^[:|/\\-]{1,4}$/.test(token)) {
       chordCount++;
     }
   }
 
-  // Si más del 60% de los tokens son acordes, asumimos que es una línea de acordes
-  return chordCount / tokens.length > 0.6;
+  // Si la mayoría de los tokens son acordes, es una línea de acordes
+  return chordCount / tokens.length >= 0.5;
 }
 
 /**
@@ -192,8 +211,18 @@ export function parseSongToBlocks(text: string): SongLineParsed[] {
     const currentLine = lines[i];
     const nextLine = lines[i + 1];
 
+    // Caso 0: El título es siempre la primera línea no vacía (si no es acorde/sección)
+    if (i === 0 && currentLine.trim() !== '' && !isChordLine(currentLine) && !currentLine.trim().startsWith('[')) {
+      result.push({
+        type: 'section',
+        blocks: [{ text: `[TITULO] ${currentLine.trim()}` }]
+      });
+      continue;
+    }
+
     // Caso A: Línea de acordes seguida de letra
-    if (isChordLine(currentLine) && nextLine !== undefined && !isChordLine(nextLine) && nextLine.trim() !== '') {
+    // Solo si la siguiente línea NO es metadatos o vacío
+    if (isChordLine(currentLine) && nextLine !== undefined && !isChordLine(nextLine) && nextLine.trim() !== '' && !isMetadataLine(nextLine)) {
       result.push(parseChordsAndLyrics(currentLine, nextLine));
       i++; // Saltamos la línea de letra porque ya la procesamos
       continue;
@@ -251,50 +280,61 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
   /**
    * Función auxiliar: dado un índice de carácter en la línea de letra,
    * retrocede hasta el inicio de la palabra que contiene ese índice.
-   * Si el índice ya es el inicio de una palabra (o hay un espacio antes),
-   * lo devuelve tal cual.
-   * IMPORTANTE: si el acorde cae dentro de la primera palabra (sin espacios
-   * previos), retornamos 0 para que el acorde "adopte" la palabra completa
-   * desde el inicio, evitando el efecto ¿A+C pegados.
    */
   function snapToWordStart(pos: number, text: string): number {
-    if (pos <= 0 || pos >= text.length) return pos
-    // Si el carácter en `pos` es un espacio, ya estamos en un buen límite
-    if (text[pos] === ' ') return pos
-    // Retroceder hasta encontrar un espacio (inicio de esta palabra)
-    let i = pos - 1
-    while (i > 0 && text[i] !== ' ') i--
-    // Si encontramos un espacio, el inicio de la palabra es i+1
-    if (text[i] === ' ') return i + 1
-    // No había espacio antes: el acorde cae dentro de la primera palabra.
-    // Devolvemos 0 para que el bloque tome desde el inicio de la línea.
-    return 0
+    if (pos <= 0) return 0
+    if (pos >= text.length) return text.length
+    if (text[pos] === ' ') return pos;
+    if (pos > 0 && text[pos-1] === ' ') return pos
+    
+    let i = pos
+    while (i > 0 && text[i-1] !== ' ') i--
+    return i
   }
 
-  // 2. Calculamos los puntos de corte del texto, ajustados a límites de palabras
-  const cutPoints: number[] = []
+  // 2. Agrupamos acordes que caen en el mismo punto de la letra (misma palabra)
+  // Esto evita tener que crear bloques vacíos que generan huecos en el texto.
+  const groups: Map<number, { chord: string; index: number }[]> = new Map();
+  const cutPointsSet: Set<number> = new Set();
+
   for (const c of chords) {
-    cutPoints.push(snapToWordStart(c.index, lyricLine))
+    const cp = snapToWordStart(c.index, lyricLine);
+    if (!groups.has(cp)) groups.set(cp, []);
+    groups.get(cp)!.push(c);
+    cutPointsSet.add(cp);
   }
 
-  // 3. Texto antes del primer acorde (si el primer corte no es el inicio)
-  if (cutPoints[0] > 0) {
-    blocks.push({ text: lyricLine.substring(0, cutPoints[0]) })
+  const sortedCutPoints = Array.from(cutPointsSet).sort((a, b) => a - b);
+
+  // 3. Texto inicial antes del primer grupo
+  if (sortedCutPoints[0] > 0) {
+    blocks.push({ text: lyricLine.substring(0, sortedCutPoints[0]) });
   }
 
-  // 4. Emparejamos cada acorde con el segmento de texto correspondiente
-  for (let i = 0; i < chords.length; i++) {
-    const textStart = cutPoints[i]
-    const textEnd = i + 1 < cutPoints.length
-      ? cutPoints[i + 1]
-      : lyricLine.length // Último acorde toma el resto de la línea
+  // 4. Creamos los bloques agrupados
+  for (let i = 0; i < sortedCutPoints.length; i++) {
+    const start = sortedCutPoints[i];
+    const end = i + 1 < sortedCutPoints.length ? sortedCutPoints[i + 1] : lyricLine.length;
+    
+    const chordsInGroup = groups.get(start)!;
+    
+    // Construimos un único string de acordes manteniendo el espaciado relativo original
+    let combinedChord = "";
+    let lastChordEnd = chordsInGroup[0].index;
+    combinedChord += chordsInGroup[0].chord;
+    lastChordEnd = chordsInGroup[0].index + chordsInGroup[0].chord.length;
 
-    const text = lyricLine.substring(textStart, textEnd)
+    for (let j = 1; j < chordsInGroup.length; j++) {
+      const c = chordsInGroup[j];
+      const gap = Math.max(1, c.index - lastChordEnd);
+      combinedChord += " ".repeat(gap) + c.chord;
+      lastChordEnd = c.index + c.chord.length;
+    }
 
     blocks.push({
-      chord: chords[i].chord,
-      text: text || ' ', // Espacio mínimo para que el bloque tenga altura
-    })
+      chord: combinedChord,
+      text: lyricLine.substring(start, end)
+    });
   }
 
   return { type: 'chords-lyrics', blocks }
@@ -306,13 +346,42 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
  */
 function parseChordsOnly(line: string): SongBlock[] {
   const blocks: SongBlock[] = [];
+  
+  // Detectar si la línea empieza con una etiqueta (ej: "Intro: ")
+  const labelMatch = line.match(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse):\s*/i);
+  let processLine = line;
+  let offset = 0;
+  
+  if (labelMatch) {
+    blocks.push({
+      text: labelMatch[0]
+    });
+    processLine = line.substring(labelMatch[0].length);
+    offset = labelMatch[0].length;
+  }
+
   const chordRegex = /[^\s]+/g;
   let match;
+  const chords: { chord: string; index: number }[] = [];
   
-  while ((match = chordRegex.exec(line)) !== null) {
+  while ((match = chordRegex.exec(processLine)) !== null) {
+    chords.push({ chord: match[0], index: match.index });
+  }
+
+  for (let i = 0; i < chords.length; i++) {
+    const current = chords[i];
+    const next = chords[i + 1];
+    
+    // Calculamos el espacio hasta el siguiente acorde
+    let spaceCount = 3; // Espacio por defecto al final
+    if (next) {
+      // Intentamos preservar la distancia original, pero con un mínimo de 3 espacios
+      spaceCount = Math.max(3, next.index - (current.index + current.chord.length));
+    }
+
     blocks.push({
-      chord: match[0],
-      text: ' '.repeat(match[0].length + 2) // Añadimos espacio visual entre acordes instrumentales
+      chord: current.chord,
+      text: ' '.repeat(spaceCount)
     });
   }
   
