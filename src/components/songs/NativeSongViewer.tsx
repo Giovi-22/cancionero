@@ -9,6 +9,7 @@ import { useLiveSession } from '@/hooks/useLiveSession'
 import { useSetlists } from '@/hooks/useSetlists'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { CacheService } from '@/services/CacheService'
 
 interface NativeSongViewerProps {
   content: string
@@ -104,20 +105,28 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
   const { isFavorite, toggleFavorite } = useFavorites()
 
+  // Guardar contenido en caché automáticamente al cargar
+  useEffect(() => {
+    if (content && id) {
+      CacheService.saveSongContent(id, content);
+    }
+  }, [id, content]);
+
   // Cargar configuración
   useEffect(() => {
     const loadSettings = async () => {
-      const saved = sessionStorage.getItem(`song_settings_${id}`)
-      if (saved) {
-        try {
-          const s = JSON.parse(saved)
-          if (typeof s.transpose === 'number') setTranspose(s.transpose)
-          if (typeof s.capo === 'number') setCapo(s.capo)
-          if (typeof s.fontSize === 'number') setFontSize(s.fontSize)
-          if (s.musicianNotes) setMusicianNotes(s.musicianNotes)
-        } catch (e) {}
+      // 1. Intentar cargar de IndexedDB (más rápido y persistente offline)
+      const localSettings = await CacheService.getSongSettings(id);
+      if (localSettings) {
+        if (typeof localSettings.transpose === 'number') setTranspose(localSettings.transpose)
+        if (typeof localSettings.capo === 'number') setCapo(localSettings.capo)
+        if (typeof localSettings.fontSize === 'number') setFontSize(localSettings.fontSize)
+        if (typeof localSettings.bpm === 'number') setBpm(localSettings.bpm)
+        if (localSettings.viewMode) setViewMode(localSettings.viewMode)
+        if (localSettings.musicianNotes) setMusicianNotes(localSettings.musicianNotes)
       }
 
+      // 2. Intentar sincronizar con Supabase si hay sesión
       if (session?.user?.email) {
         setIsSyncing(true)
         const { data } = await supabase
@@ -131,6 +140,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           setTranspose(data.transpose)
           setCapo(data.capo)
           setFontSize(data.font_size)
+          if (data.bpm) setBpm(data.bpm)
           setMusicianNotes(data.musician_notes || {})
         }
         setIsSyncing(false)
@@ -142,9 +152,12 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   // Guardar configuración (Debounce)
   useEffect(() => {
     const timer = setTimeout(async () => {
-      sessionStorage.setItem(`song_settings_${id}`, JSON.stringify({
-        transpose, capo, fontSize, musicianNotes
-      }))
+      const settingsObj = {
+        transpose, capo, fontSize, musicianNotes, bpm, viewMode, scrollSpeed
+      }
+
+      // Guardar localmente en IndexedDB
+      await CacheService.saveSongSettings(id, settingsObj);
 
       if (session?.user?.email) {
         await supabase
@@ -155,13 +168,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             transpose,
             capo,
             font_size: fontSize,
+            bpm,
             musician_notes: musicianNotes,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_email,song_id' })
       }
     }, 1500)
     return () => clearTimeout(timer)
-  }, [id, transpose, capo, fontSize, musicianNotes, session])
+  }, [id, transpose, capo, fontSize, musicianNotes, bpm, viewMode, scrollSpeed, session])
 
   // Lógica de Procesado de Canción
   const parsedLines = useMemo(() => {

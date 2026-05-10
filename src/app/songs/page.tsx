@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import SongList from "@/components/songs/SongList"
 import { Song } from '@/types/drive'
 import { useAppSettings } from '@/hooks/useAppSettings'
+import { CacheService } from '@/services/CacheService'
 
 export default function SongsPage() {
   const [songs, setSongs] = useState<Song[]>([])
@@ -16,34 +17,36 @@ export default function SongsPage() {
     const loadSongs = async () => {
       if (isSettingsLoading) return; // Esperar a que carguen las opciones
 
-      // 1. Intentar cargar de sessionStorage para carga instantánea
-      const cached = sessionStorage.getItem(`cancionero_full_repertoire_${settings.driveFolderId}`)
-      if (cached) {
-        try {
-          const data = JSON.parse(cached)
-          setSongs(data)
-          setLoading(false)
-          // Opcional: Re-validar en segundo plano si queremos que sea muy fresco
-          return 
-        } catch (e) {}
+      // 1. Intentar cargar de IndexedDB para carga instantánea y permanente
+      const cachedSongs = await CacheService.getRepertoire(settings.driveFolderId || 'root')
+      if (cachedSongs) {
+        setSongs(cachedSongs)
+        setLoading(false)
+        // Continuamos para re-validar con el servidor si es necesario, 
+        // pero el usuario ya ve su lista.
       }
 
-      // 2. Si no hay cache, pedir a la API
+      // 2. Pedir a la API para actualizar/validar
       try {
         const url = settings.driveFolderId 
           ? `/api/drive/songs?folderId=${settings.driveFolderId}`
           : '/api/drive/songs'
         
         const response = await fetch(url)
-        if (!response.ok) throw new Error('Error al cargar')
+        if (!response.ok) {
+          if (cachedSongs) return; // Si falló la red pero tenemos cache, no mostramos error
+          throw new Error('Error al cargar')
+        }
         const data = await response.json()
         
         setSongs(data.songs)
-        sessionStorage.setItem(`cancionero_full_repertoire_${settings.driveFolderId}`, JSON.stringify(data.songs))
+        await CacheService.saveRepertoire(settings.driveFolderId || 'root', data.songs)
         setLoading(false)
       } catch (e) {
         console.error(e)
-        setError(true)
+        if (!cachedSongs) {
+          setError(true)
+        }
         setLoading(false)
       }
     }

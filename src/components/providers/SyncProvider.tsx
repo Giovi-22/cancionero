@@ -1,0 +1,26 @@
+'use client'
+
+import { useEffect } from 'react'
+import { useSession } from 'next-auth/react'
+import { SyncService } from '@/services/SyncService'
+import { useAppSettings } from '@/hooks/useAppSettings'
+
+export default function SyncProvider() {
+  const { status } = useSession()
+  const { settings, isLoading: isSettingsLoading } = useAppSettings()
+
+  useEffect(() => {
+    // Solo sincronizar automáticamente cuando el usuario está logueado
+    // y las configuraciones de la carpeta de Drive están cargadas.
+    if (status === 'authenticated' && !isSettingsLoading) {
+      // Usar un timeout pequeño para no interferir con la carga inicial crítica
+      const timer = setTimeout(() => {
+        SyncService.syncFullRepertoire(settings.driveFolderId);
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [status, isSettingsLoading, settings.driveFolderId]);
+
+  return null;
+}

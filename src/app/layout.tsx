@@ -5,6 +5,7 @@ import Navbar from "@/components/layout/Navbar";
 import LiveShowBanner from "@/components/layout/LiveShowBanner";
 import SessionProvider from "@/components/providers/SessionProvider";
 import ServiceWorkerRegister from "@/components/providers/ServiceWorkerRegister";
+import SyncProvider from "@/components/providers/SyncProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,6 +50,7 @@ export default function RootLayout({
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
           <LiveShowBanner />
+          <SyncProvider />
           <ServiceWorkerRegister />
         </SessionProvider>
       </body>
