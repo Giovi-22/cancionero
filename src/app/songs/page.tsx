@@ -1,49 +1,54 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import SongList from "@/components/songs/SongList"
 import { Song } from '@/types/drive'
 import { useAppSettings } from '@/hooks/useAppSettings'
+import { CacheService } from '@/services/CacheService'
 
 export default function SongsPage() {
   const [songs, setSongs] = useState<Song[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
+  const { data: session } = useSession()
   const { settings, isLoading: isSettingsLoading } = useAppSettings()
 
   useEffect(() => {
     const loadSongs = async () => {
       if (isSettingsLoading) return; // Esperar a que carguen las opciones
 
-      // 1. Intentar cargar de sessionStorage para carga instantánea
-      const cached = sessionStorage.getItem(`cancionero_full_repertoire_${settings.driveFolderId}`)
-      if (cached) {
-        try {
-          const data = JSON.parse(cached)
-          setSongs(data)
-          setLoading(false)
-          // Opcional: Re-validar en segundo plano si queremos que sea muy fresco
-          return 
-        } catch (e) {}
+      // 1. Intentar cargar de IndexedDB para carga instantánea y permanente
+      const cachedSongs = await CacheService.getRepertoire(settings.driveFolderId || 'root')
+      if (cachedSongs) {
+        setSongs(cachedSongs)
+        setLoading(false)
+        // Continuamos para re-validar con el servidor si es necesario, 
+        // pero el usuario ya ve su lista.
       }
 
-      // 2. Si no hay cache, pedir a la API
+      // 2. Pedir a la API para actualizar/validar
       try {
         const url = settings.driveFolderId 
           ? `/api/drive/songs?folderId=${settings.driveFolderId}`
           : '/api/drive/songs'
         
         const response = await fetch(url)
-        if (!response.ok) throw new Error('Error al cargar')
+        if (!response.ok) {
+          if (cachedSongs) return; // Si falló la red pero tenemos cache, no mostramos error
+          throw new Error('Error al cargar')
+        }
         const data = await response.json()
         
         setSongs(data.songs)
-        sessionStorage.setItem(`cancionero_full_repertoire_${settings.driveFolderId}`, JSON.stringify(data.songs))
+        await CacheService.saveRepertoire(settings.driveFolderId || 'root', data.songs)
         setLoading(false)
       } catch (e) {
         console.error(e)
-        setError(true)
+        if (!cachedSongs) {
+          setError(true)
+        }
         setLoading(false)
       }
     }
@@ -61,12 +66,16 @@ export default function SongsPage() {
     )
   }
 
-  if (error) {
+  if (error || session?.error === 'RefreshAccessTokenError') {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-        <h1 className="text-2xl font-bold text-red-500 mb-4">Error de Conexión</h1>
+        <h1 className="text-2xl font-bold text-red-500 mb-4">
+          {session?.error === 'RefreshAccessTokenError' ? 'Sesión Expirada' : 'Error de Conexión'}
+        </h1>
         <p className="text-muted-foreground max-w-md">
-          No pudimos conectar con Google Drive. Asegúrate de estar conectado y de tener permisos.
+          {session?.error === 'RefreshAccessTokenError' 
+            ? 'Tu sesión de Google ha expirado por seguridad. Por favor, cierra sesión e ingresa nuevamente.'
+            : 'No pudimos conectar con Google Drive. Asegúrate de estar conectado y de tener permisos.'}
         </p>
       </div>
     )

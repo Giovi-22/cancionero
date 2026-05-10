@@ -10,12 +10,15 @@ export default function OfflineSongViewer({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Intentar leer de caché
-    const cachedContent = CacheService.getSongContent(id);
-    if (cachedContent) {
-      setContent(cachedContent);
-    }
-    setLoading(false);
+    const loadFromCache = async () => {
+      // Intentar leer de caché
+      const cachedContent = await CacheService.getSongContent(id);
+      if (cachedContent) {
+        setContent(cachedContent);
+      }
+      setLoading(false);
+    };
+    loadFromCache();
   }, [id]);
 
   if (loading) {
