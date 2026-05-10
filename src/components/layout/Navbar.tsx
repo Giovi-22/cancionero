@@ -4,13 +4,24 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { signIn, signOut, useSession } from 'next-auth/react'
+import { useEffect } from 'react'
 
 export default function Navbar() {
   const { data: session, status } = useSession()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const isLoading = status === 'loading'
 
+  // Si hay un error de refresco de token, cerramos sesión automáticamente
+  useEffect(() => {
+    if (session?.error === 'RefreshAccessTokenError') {
+      signOut()
+    }
+  }, [session])
+
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
+  
+  // Consideramos "autenticado" solo si hay sesión Y no hay error
+  const isAuthenticated = session && !session.error
 
   return (
     <nav className="sticky top-0 z-50 border-b border-muted bg-background/80 backdrop-blur-md">
@@ -34,7 +45,7 @@ export default function Navbar() {
         
         {/* Desktop Menu */}
         <div className="hidden md:flex items-center gap-4">
-          {session ? (
+            {isAuthenticated ? (
             <>
               <Link 
                 href="/songs" 
@@ -117,7 +128,7 @@ export default function Navbar() {
       {isMenuOpen && (
         <div className="md:hidden border-t border-muted bg-background/95 backdrop-blur-lg animate-in slide-in-from-top-2 duration-200">
           <div className="space-y-1 px-4 pb-6 pt-4">
-            {session ? (
+              {isAuthenticated ? (
               <>
                 <div className="flex items-center gap-3 px-3 py-4 mb-2 border-b border-muted">
                   {session.user?.image ? (

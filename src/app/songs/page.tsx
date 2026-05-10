@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import SongList from "@/components/songs/SongList"
 import { Song } from '@/types/drive'
 import { useAppSettings } from '@/hooks/useAppSettings'
@@ -11,6 +12,7 @@ export default function SongsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
+  const { data: session } = useSession()
   const { settings, isLoading: isSettingsLoading } = useAppSettings()
 
   useEffect(() => {
@@ -64,12 +66,16 @@ export default function SongsPage() {
     )
   }
 
-  if (error) {
+  if (error || session?.error === 'RefreshAccessTokenError') {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-        <h1 className="text-2xl font-bold text-red-500 mb-4">Error de Conexión</h1>
+        <h1 className="text-2xl font-bold text-red-500 mb-4">
+          {session?.error === 'RefreshAccessTokenError' ? 'Sesión Expirada' : 'Error de Conexión'}
+        </h1>
         <p className="text-muted-foreground max-w-md">
-          No pudimos conectar con Google Drive. Asegúrate de estar conectado y de tener permisos.
+          {session?.error === 'RefreshAccessTokenError' 
+            ? 'Tu sesión de Google ha expirado por seguridad. Por favor, cierra sesión e ingresa nuevamente.'
+            : 'No pudimos conectar con Google Drive. Asegúrate de estar conectado y de tener permisos.'}
         </p>
       </div>
     )

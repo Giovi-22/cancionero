@@ -35,6 +35,7 @@ async function refreshAccessToken(token: any) {
     console.error("Error al refrescar el access token:", error)
     return {
       ...token,
+      accessToken: undefined,
       error: "RefreshAccessTokenError",
     }
   }
