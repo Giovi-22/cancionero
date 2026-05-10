@@ -25,7 +25,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   // ?list=[setlistId] = modo visualización de lista local
   const listId = searchParams.get('list')
   const { setlists } = useSetlists()
-  
+
   const [transpose, setTranspose] = useState(0)
   const [capo, setCapo] = useState(0)
   const [fontSize, setFontSize] = useState(18)
@@ -38,7 +38,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [showNotes, setShowNotes] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  
+
   // Metrónomo
   const [bpm, setBpm] = useState(120)
   const [isMetronomeActive, setIsMetronomeActive] = useState(false)
@@ -85,9 +85,9 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
   const toggleStageMode = () => {
     if (!isStageMode) {
-      document.documentElement.requestFullscreen?.().catch(() => {})
+      document.documentElement.requestFullscreen?.().catch(() => { })
     } else {
-      document.exitFullscreen?.().catch(() => {})
+      document.exitFullscreen?.().catch(() => { })
     }
     setIsStageMode(!isStageMode)
   }
@@ -115,7 +115,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           if (typeof s.capo === 'number') setCapo(s.capo)
           if (typeof s.fontSize === 'number') setFontSize(s.fontSize)
           if (s.musicianNotes) setMusicianNotes(s.musicianNotes)
-        } catch (e) {}
+        } catch (e) { }
       }
 
       if (session?.user?.email) {
@@ -204,13 +204,13 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const listSetlist = listId ? setlists.find(s => s.id === listId) : null
   const currentListIndex = listSetlist ? listSetlist.songIds.findIndex(songId => songId === id) : -1
   const prevListSongId = currentListIndex > 0 && listSetlist ? listSetlist.songIds[currentListIndex - 1] : null
-  const nextListSongId = currentListIndex !== -1 && listSetlist && currentListIndex < listSetlist.songIds.length - 1 
-    ? listSetlist.songIds[currentListIndex + 1] 
+  const nextListSongId = currentListIndex !== -1 && listSetlist && currentListIndex < listSetlist.songIds.length - 1
+    ? listSetlist.songIds[currentListIndex + 1]
     : null
 
   return (
     <div className={`flex flex-col min-h-screen transition-colors duration-500 ${isStageMode ? 'bg-black' : 'bg-background'} pb-32`}>
-      
+
       {/* Top Header Compacto */}
       {!isStageMode && (
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-muted px-4 py-3 flex items-center justify-between">
@@ -222,12 +222,12 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             </Link>
             <h1 className="text-sm font-bold truncate max-w-[200px] sm:max-w-md">{title}</h1>
           </div>
-          
+
           <div className="flex items-center gap-2">
             {/* Controles de Navegación de Lista Local */}
             {listSetlist && (
               <div className="hidden sm:flex items-center gap-1 bg-muted/40 rounded-full p-1 border border-muted mr-2">
-                <button 
+                <button
                   onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
                   disabled={!prevListSongId}
                   className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
@@ -240,7 +240,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                 <span className="text-[10px] font-bold text-muted-foreground min-w-[36px] text-center px-1">
                   {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
                 </span>
-                <button 
+                <button
                   onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
                   disabled={!nextListSongId}
                   className="p-1.5 rounded-full hover:bg-background hover:shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-transparent text-foreground"
@@ -253,7 +253,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               </div>
             )}
 
-            <button 
+            <button
               onClick={() => setIsSettingsOpen(true)}
               className="p-2 hover:bg-muted rounded-full text-accent transition-colors relative"
             >
@@ -262,7 +262,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               </svg>
               {isSyncing && <div className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full animate-pulse" />}
             </button>
-            <button 
+            <button
               onClick={toggleStageMode}
               className="hidden sm:flex items-center gap-2 bg-zinc-900 text-white px-4 py-1.5 rounded-full border border-white/10 hover:bg-white hover:text-black transition-all font-bold text-xs"
             >
@@ -274,7 +274,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
       {/* Contenido de la Canción con Motor de Bloques Inteligentes */}
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-8 md:px-16 py-12">
-        <div 
+        <div
           ref={viewerRef}
           className={`font-mono select-none transition-colors duration-500 flex flex-col gap-y-4 ${isStageMode ? 'text-white' : 'text-foreground/90'}`}
           style={{ fontSize: `${fontSize}px` }}
@@ -289,11 +289,10 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             if (viewMode === 'chords' && line.type === 'chords-lyrics' && !line.blocks.some(b => b.chord)) return null;
 
             return (
-              <div 
-                key={lIndex} 
-                className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${
-                  line.type === 'section' ? (isTitle ? 'mt-8 mb-6' : 'mt-6 mb-2 border-b border-muted/30 pb-2') : 'hover:bg-accent/5'
-                } ${isTitle ? 'justify-center w-full' : ''}`}
+              <div
+                key={lIndex}
+                className={`group relative flex flex-wrap items-end transition-colors cursor-pointer rounded px-2 -mx-2 ${line.type === 'section' ? (isTitle ? 'mt-8 mb-6' : 'mt-6 mb-2 border-b border-muted/30 pb-2') : 'hover:bg-accent/5'
+                  } ${isTitle ? 'justify-center w-full' : ''}`}
                 onClick={() => !isStageMode && setEditingLine(lIndex)}
               >
                 {line.blocks.map((block, bIndex) => (
@@ -306,13 +305,12 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                     )}
                     {/* Espaciador para mantener altura si no hay acorde y estamos en modo 'all' */}
                     {!block.chord && viewMode === 'all' && line.type === 'chords-lyrics' && (
-                       <span className="h-6 mb-1 block select-none"> </span>
+                      <span className="h-6 mb-1 block select-none"> </span>
                     )}
                     {/* Texto */}
                     {viewMode !== 'chords' || line.type === 'section' ? (
-                      <span className={`whitespace-pre leading-none ${
-                        line.type === 'section' 
-                          ? `${sectionColor} font-bold tracking-widest ${isTitle ? 'text-2xl sm:text-3xl uppercase text-center' : 'text-xs uppercase'}` 
+                      <span className={`whitespace-pre leading-none ${line.type === 'section'
+                          ? `${sectionColor} font-bold tracking-widest ${isTitle ? 'text-2xl sm:text-3xl uppercase text-center' : 'text-xs uppercase'}`
                           : ''
                         }`}
                       >
@@ -329,9 +327,8 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
 
                 {/* Nota del músico */}
                 {musicianNotes[lIndex] && (
-                  <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${
-                    isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
-                  }`}>
+                  <div className={`absolute left-full ml-4 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] px-2 py-1 rounded-lg font-sans font-bold shadow-lg flex items-center gap-2 z-10 ${isStageMode ? 'bg-yellow-500 text-black' : 'bg-muted text-accent'
+                    }`}>
                     <span>{musicianNotes[lIndex]}</span>
                   </div>
                 )}
@@ -368,7 +365,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           {/* Controles móviles de lista (visibles solo en pantallas pequeñas) */}
           {listSetlist && (
             <div className="sm:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 bg-background/90 backdrop-blur-2xl px-2 py-1.5 rounded-full border border-muted shadow-xl">
-              <button 
+              <button
                 onClick={() => prevListSongId && router.push(`/songs/${prevListSongId}?list=${listId}`)}
                 disabled={!prevListSongId}
                 className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
@@ -380,7 +377,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               <span className="text-xs font-bold text-muted-foreground min-w-[40px] text-center">
                 {currentListIndex !== -1 ? `${currentListIndex + 1}/${listSetlist.songIds.length}` : '-'}
               </span>
-              <button 
+              <button
                 onClick={() => nextListSongId && router.push(`/songs/${nextListSongId}?list=${listId}`)}
                 disabled={!nextListSongId}
                 className="p-2 rounded-full hover:bg-muted transition-all disabled:opacity-30 text-foreground"
@@ -399,7 +396,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
             </div>
             <div className="w-px h-6 bg-muted mx-1" />
-            <button 
+            <button
               onClick={() => setIsScrolling(!isScrolling)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
             >
@@ -407,37 +404,37 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
             </button>
             {isScrolling && (
-               <div className="flex items-center gap-1">
-                  <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
-                  <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
-               </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
+                <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
+              </div>
             )}
             <div className="w-px h-6 bg-muted mx-1 hidden sm:block" />
-            
+
             {/* View Mode Toggle */}
             <div className="flex items-center bg-muted/40 rounded-full p-1">
-              <button 
+              <button
                 onClick={() => setViewMode('all')}
                 className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'all' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Todo
               </button>
-              <button 
+              <button
                 onClick={() => setViewMode('lyrics')}
                 className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'lyrics' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Letra
               </button>
-              <button 
+              <button
                 onClick={() => setViewMode('chords')}
                 className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'chords' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Acordes
               </button>
             </div>
-            
+
             <div className="w-px h-6 bg-muted mx-1" />
-            
+
             <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -454,14 +451,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[32px] p-8 border-t border-muted shadow-2xl animate-in slide-in-from-bottom-full duration-300">
             <div className="w-12 h-1.5 bg-muted rounded-full mx-auto mb-8" />
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 max-w-2xl mx-auto">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Capodastro</label>
                   <div className="flex flex-wrap gap-2">
                     {[0, 1, 2, 3, 4, 5].map(f => (
-                      <button 
+                      <button
                         key={f}
                         onClick={() => setCapo(f)}
                         className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${capo === f ? 'bg-accent border-accent text-white' : 'bg-muted/50 border-transparent text-muted-foreground'}`}

@@ -21,10 +21,10 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
   let song;
   let content = "";
   let isOffline = false;
-  
+
   try {
     song = await driveService.getSongDetails(session.accessToken, id)
-    
+
     // Si es un Google Doc, intentamos traer el contenido de texto
     if (song.mimeType === 'application/vnd.google-apps.document') {
       content = await driveService.getSongContent(session.accessToken, id)
@@ -48,7 +48,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
       {!isGoogleDoc && (
         <header className="flex items-center justify-between px-4 py-3 bg-background/50 backdrop-blur-md border-b border-muted z-50">
           <div className="flex items-center gap-3 overflow-hidden">
-            <Link 
+            <Link
               href="/songs"
               className="p-2 hover:bg-muted rounded-full transition-colors"
             >
@@ -76,7 +76,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
           <div className="mx-auto h-full max-w-5xl px-4 sm:px-8 lg:px-12">
             {viewerUrl ? (
               <div className="w-full h-full rounded-lg overflow-hidden shadow-2xl border border-muted/20 bg-white">
-                <iframe 
+                <iframe
                   src={viewerUrl}
                   className="w-full h-full border-none"
                   allow="autoplay"
@@ -85,9 +85,9 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center p-8">
                 <p className="text-muted-foreground">No se puede previsualizar este archivo.</p>
-                <a 
-                  href={song.webViewLink} 
-                  target="_blank" 
+                <a
+                  href={song.webViewLink}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 text-accent font-bold hover:underline"
                 >
@@ -101,7 +101,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
 
       {/* Floating Back Button (Solo para PDFs, el nativo ya tiene controles arriba) */}
       {!isGoogleDoc && (
-        <Link 
+        <Link
           href="/songs"
           className="fixed bottom-6 left-6 p-4 bg-muted/80 backdrop-blur-md text-foreground rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all z-50 border border-white/10"
         >
