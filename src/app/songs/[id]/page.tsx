@@ -6,6 +6,8 @@ import NativeSongViewer from "@/components/songs/NativeSongViewer"
 
 import OfflineSongViewer from "@/components/songs/OfflineSongViewer"
 
+import OfflineSongViewer from "@/components/songs/OfflineSongViewer"
+
 interface SongDetailsPageProps {
   params: Promise<{ id: string }>
 }
