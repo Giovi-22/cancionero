@@ -68,7 +68,8 @@ export function isChordLine(line: string): boolean {
 
   // Un criterio simple: la mayoría de los "tokens" deben parecer acordes
   const tokens = trimmed.split(/\s+/);
-  const chordRegex = /^[A-G][b#]?(m|maj|dim|aug|sus|add|v|i|[0-9])?.*$/i;
+  // Regex estricto para acordes (evita coincidencias falsas con palabras como "Gloria" o "Dios")
+  const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add)?\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
   
   let chordCount = 0;
   for (const token of tokens) {
@@ -77,8 +78,8 @@ export function isChordLine(line: string): boolean {
     }
   }
 
-  // Si más del 70% de los tokens son acordes, asumimos que es una línea de acordes
-  return chordCount / tokens.length > 0.6; // Bajamos un poco el umbral
+  // Si más del 60% de los tokens son acordes, asumimos que es una línea de acordes
+  return chordCount / tokens.length > 0.6;
 }
 
 /**

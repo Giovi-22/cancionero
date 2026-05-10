@@ -46,7 +46,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
     <div className="flex flex-col min-h-screen bg-black">
       {/* Header Minimalista (solo si no estamos en modo scroll o nativo con su propio header) */}
       {!isGoogleDoc && (
-        <header className="flex items-center justify-between px-4 py-3 bg-background/50 backdrop-blur-md border-b border-muted z-50">
+        <header className="sticky top-16 flex items-center justify-between px-4 py-3 bg-background/50 backdrop-blur-md border-b border-muted z-40">
           <div className="flex items-center gap-3 overflow-hidden">
             <Link 
               href="/songs"

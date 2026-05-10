@@ -32,7 +32,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [isScrolling, setIsScrolling] = useState(false)
   const [scrollSpeed, setScrollSpeed] = useState(1)
   const [isStageMode, setIsStageMode] = useState(false)
-  const [viewMode, setViewMode] = useState<'all' | 'lyrics' | 'chords'>('all')
+  const [viewMode, setViewMode] = useState<'all' | 'lyrics'>('all')
   const [musicianNotes, setMusicianNotes] = useState<Record<number, string>>({})
   const [editingLine, setEditingLine] = useState<number | null>(null)
   const [showNotes, setShowNotes] = useState(true)
@@ -213,7 +213,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
       
       {/* Top Header Compacto */}
       {!isStageMode && (
-        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-xl border-b border-muted px-4 py-3 flex items-center justify-between">
+        <header className="sticky top-16 z-30 bg-background/80 backdrop-blur-xl border-b border-muted px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/songs" className="p-2 hover:bg-muted rounded-full transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -283,11 +283,6 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
             const sectionColor = isStageMode ? 'text-yellow-400' : 'text-blue-500';
 
-            // Si estamos en modo acordes, ocultar líneas de solo texto
-            if (viewMode === 'chords' && line.type === 'text') return null;
-            // Si estamos en modo acordes y la línea no tiene acordes y no es sección, no mostrar
-            if (viewMode === 'chords' && line.type === 'chords-lyrics' && !line.blocks.some(b => b.chord)) return null;
-
             return (
               <div 
                 key={lIndex} 
@@ -300,7 +295,7 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                   <div key={bIndex} className={`relative flex flex-col min-w-[1ch] ${isTitle ? 'items-center w-full' : ''}`}>
                     {/* Acorde */}
                     {block.chord && viewMode !== 'lyrics' && (
-                      <span className={`text-accent font-bold mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300 ${viewMode === 'chords' ? 'h-auto' : 'h-6'}`}>
+                      <span className="text-accent font-bold mb-1 select-none animate-in fade-in slide-in-from-bottom-1 duration-300 h-6">
                         {block.chord}
                       </span>
                     )}
@@ -309,21 +304,14 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                        <span className="h-6 mb-1 block select-none"> </span>
                     )}
                     {/* Texto */}
-                    {viewMode !== 'chords' || line.type === 'section' ? (
-                      <span className={`whitespace-pre leading-none ${
-                        line.type === 'section' 
-                          ? `${sectionColor} font-bold tracking-widest ${isTitle ? 'text-2xl sm:text-3xl uppercase text-center' : 'text-xs uppercase'}` 
-                          : ''
-                        }`}
-                      >
-                        {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() || '[TÍTULO]' : (block.text || (block.chord && viewMode === 'all' ? ' ' : ''))}
-                      </span>
-                    ) : (
-                      // En modo acordes, necesitamos mantener el espacio horizontal si había texto
-                      <span className="whitespace-pre leading-none select-none opacity-0 text-[0px]">
-                        {block.text || (block.chord ? ' ' : '')}
-                      </span>
-                    )}
+                    <span className={`${line.type === 'chords-lyrics' ? 'whitespace-pre' : 'whitespace-pre-wrap'} leading-none ${
+                      line.type === 'section' 
+                        ? `${sectionColor} font-bold tracking-widest ${isTitle ? 'text-2xl sm:text-3xl uppercase text-center' : 'text-xs uppercase'}` 
+                        : ''
+                      }`}
+                    >
+                      {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() || '[TÍTULO]' : (block.text || (block.chord && viewMode === 'all' ? ' ' : ''))}
+                    </span>
                   </div>
                 ))}
 
@@ -392,30 +380,33 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
             </div>
           )}
 
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl">
-            <div className="flex items-center bg-muted/40 rounded-full px-2">
+          <div 
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-background/80 backdrop-blur-2xl px-4 py-2 rounded-full border border-muted shadow-2xl max-w-[95vw] overflow-x-auto [&::-webkit-scrollbar]:hidden"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            <div className="flex items-center bg-muted/40 rounded-full px-2 shrink-0">
               <button onClick={() => setTranspose(prev => prev - 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">-</button>
               <span className="w-10 text-center text-xs font-bold font-mono">{transpose > 0 ? `+${transpose}` : transpose}</span>
               <button onClick={() => setTranspose(prev => prev + 1)} className="w-8 h-8 flex items-center justify-center hover:text-accent">+</button>
             </div>
-            <div className="w-px h-6 bg-muted mx-1" />
+            <div className="w-px h-6 bg-muted mx-1 shrink-0" />
             <button 
               onClick={() => setIsScrolling(!isScrolling)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all font-bold text-xs shrink-0 ${isScrolling ? 'bg-accent text-white' : 'hover:bg-muted'}`}
             >
               <div className={`w-1.5 h-1.5 rounded-full ${isScrolling ? 'bg-white animate-pulse' : 'bg-muted-foreground'}`} />
               {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
             </button>
             {isScrolling && (
-               <div className="flex items-center gap-1">
+               <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => setScrollSpeed(Math.max(0.1, scrollSpeed - 0.1))} className="p-1 hover:text-accent">-</button>
                   <button onClick={() => setScrollSpeed(Math.min(4, scrollSpeed + 0.1))} className="p-1 hover:text-accent">+</button>
                </div>
             )}
-            <div className="w-px h-6 bg-muted mx-1 hidden sm:block" />
+            <div className="w-px h-6 bg-muted mx-1 hidden sm:block shrink-0" />
             
             {/* View Mode Toggle */}
-            <div className="flex items-center bg-muted/40 rounded-full p-1">
+            <div className="flex items-center bg-muted/40 rounded-full p-1 shrink-0">
               <button 
                 onClick={() => setViewMode('all')}
                 className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'all' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -428,17 +419,11 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
               >
                 Letra
               </button>
-              <button 
-                onClick={() => setViewMode('chords')}
-                className={`px-3 py-1 text-[10px] sm:text-xs font-bold rounded-full transition-all ${viewMode === 'chords' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Acordes
-              </button>
             </div>
             
-            <div className="w-px h-6 bg-muted mx-1" />
+            <div className="w-px h-6 bg-muted mx-1 shrink-0" />
             
-            <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden">
+            <button onClick={toggleStageMode} className="p-2 hover:bg-muted rounded-full sm:hidden shrink-0">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
