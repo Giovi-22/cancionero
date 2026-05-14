@@ -30,7 +30,7 @@ export default function SettingsPage() {
       finalId = finalId.split('id=')[1].split('&')[0];
     }
 
-    await saveSettings({ driveFolderId: finalId });
+    await saveSettings({ ...settings, driveFolderId: finalId });
     
     // Clear cache so it forces a reload of the songs with the new folder
     sessionStorage.removeItem(`cancionero_full_repertoire_${finalId}`);

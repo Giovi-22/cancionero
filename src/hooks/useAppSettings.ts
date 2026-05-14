@@ -67,6 +67,7 @@ export function useAppSettings() {
           .upsert({
             user_email: session.user.email,
             drive_folder_id: newSettings.driveFolderId,
+            pedal_scroll_speed: newSettings.pedalScrollSpeed,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_email' });
       } catch (e) {
