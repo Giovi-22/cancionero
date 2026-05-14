@@ -10,6 +10,8 @@ import { useSetlists } from '@/hooks/useSetlists'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CacheService } from '@/services/CacheService'
+import { usePedalControls } from '@/hooks/usePedalControls'
+import { useAppSettings } from '@/hooks/useAppSettings'
 
 interface NativeSongViewerProps {
   content: string
@@ -39,6 +41,8 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const [showNotes, setShowNotes] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  
+  const { settings, saveSettings } = useAppSettings()
   
   // Metrónomo
   const [bpm, setBpm] = useState(120)
@@ -221,6 +225,22 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
   const nextListSongId = currentListIndex !== -1 && listSetlist && currentListIndex < listSetlist.songIds.length - 1 
     ? listSetlist.songIds[currentListIndex + 1] 
     : null
+
+  // Pedal Controls
+  usePedalControls({
+    onNext: () => {
+      if (nextListSongId) {
+        router.push(`/songs/${nextListSongId}?list=${listId}`)
+      }
+    },
+    onPrev: () => {
+      if (prevListSongId) {
+        router.push(`/songs/${prevListSongId}?list=${listId}`)
+      }
+    },
+    scrollSpeed: settings.pedalScrollSpeed,
+    enabled: !editingLine // Disable pedal if user is typing a note
+  })
 
   return (
     <div className={`flex flex-col min-h-screen transition-colors duration-500 ${isStageMode ? 'bg-black' : 'bg-background'} pb-32`}>
@@ -507,6 +527,22 @@ export default function NativeSongViewer({ content, title, id }: NativeSongViewe
                       Siguiendo show
                     </div>
                   )}
+                </div>
+                
+                <div className="space-y-2 pt-4">
+                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Velocidad Pedal</label>
+                  <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-2xl">
+                    <input 
+                      type="range" 
+                      min="0.1" 
+                      max="10" 
+                      step="0.1" 
+                      value={settings.pedalScrollSpeed} 
+                      onChange={(e) => saveSettings({ ...settings, pedalScrollSpeed: Number(e.target.value) })} 
+                      className="flex-1 accent-accent" 
+                    />
+                    <span className="w-12 text-center font-bold text-accent">{settings.pedalScrollSpeed.toFixed(1)}x</span>
+                  </div>
                 </div>
               </div>
             </div>

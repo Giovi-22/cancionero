@@ -3,8 +3,8 @@ import { redirect, notFound } from "next/navigation"
 import { driveService } from "@/services/DriveService"
 import Link from "next/link"
 import NativeSongViewer from "@/components/songs/NativeSongViewer"
-
 import OfflineSongViewer from "@/components/songs/OfflineSongViewer"
+import PedalHandler from "@/components/songs/PedalHandler"
 
 interface SongDetailsPageProps {
   params: Promise<{ id: string }>
@@ -73,6 +73,7 @@ export default async function SongDetailsPage({ params }: SongDetailsPageProps) 
         <NativeSongViewer content={content} title={song.name} id={id} />
       ) : (
         <div className="flex-1 relative w-full bg-zinc-900 overflow-auto py-4 sm:py-8 h-[calc(100vh-64px)]">
+          <PedalHandler songId={id} />
           <div className="mx-auto h-full max-w-5xl px-4 sm:px-8 lg:px-12">
             {viewerUrl ? (
               <div className="w-full h-full rounded-lg overflow-hidden shadow-2xl border border-muted/20 bg-white">

@@ -6,11 +6,15 @@ import { supabase } from '@/lib/supabase';
 
 export interface AppSettings {
   driveFolderId: string;
+  pedalScrollSpeed: number;
 }
 
 export function useAppSettings() {
   const { data: session } = useSession();
-  const [settings, setSettings] = useState<AppSettings>({ driveFolderId: '' });
+  const [settings, setSettings] = useState<AppSettings>({ 
+    driveFolderId: '',
+    pedalScrollSpeed: 2
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -34,7 +38,10 @@ export function useAppSettings() {
             .maybeSingle();
 
           if (data && data.drive_folder_id) {
-            const newSettings = { driveFolderId: data.drive_folder_id };
+            const newSettings = { 
+              driveFolderId: data.drive_folder_id,
+              pedalScrollSpeed: data.pedal_scroll_speed || 2
+            };
             setSettings(newSettings);
             localStorage.setItem('cancionero_settings', JSON.stringify(newSettings));
           }
