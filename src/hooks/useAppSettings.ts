@@ -10,51 +10,56 @@ export interface AppSettings {
 }
 
 export function useAppSettings() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [settings, setSettings] = useState<AppSettings>({ 
     driveFolderId: '',
     pedalScrollSpeed: 0.2
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  // 1. Cargar de localStorage inmediatamente al montar
   useEffect(() => {
-    const loadSettings = async () => {
-      // 1. Try local storage first
-      const localSettings = localStorage.getItem('cancionero_settings');
-      if (localSettings) {
-        try {
-          const parsed = JSON.parse(localSettings);
-          setSettings(parsed);
-        } catch (e) {}
-      }
+    const localSettings = localStorage.getItem('cancionero_settings');
+    if (localSettings) {
+      try {
+        const parsed = JSON.parse(localSettings);
+        setSettings(parsed);
+      } catch (e) {}
+    }
+    // Si ya cargamos de localStorage, podemos dejar de mostrar el spinner inicial 
+    // y dejar que Supabase actualice en segundo plano si hay red.
+    setIsLoading(false);
+  }, []);
 
-      // 2. Fetch from Supabase if logged in
-      if (session?.user?.email) {
-        try {
-          const { data, error } = await supabase
-            .from('user_settings')
-            .select('drive_folder_id, pedal_scroll_speed')
-            .eq('user_email', session.user.email)
-            .maybeSingle();
+  // 2. Sincronizar con Supabase cuando cambie la sesión o el estado
+  useEffect(() => {
+    const syncWithSupabase = async () => {
+      if (status !== 'authenticated' || !session?.user?.email) return;
 
-          if (data && data.drive_folder_id) {
-            const newSettings = { 
-              driveFolderId: data.drive_folder_id,
-              pedalScrollSpeed: data.pedal_scroll_speed || 0.2
-            };
-            setSettings(newSettings);
-            localStorage.setItem('cancionero_settings', JSON.stringify(newSettings));
-          }
-        } catch (e) {
-          // Table might not exist yet, ignore
-          console.warn('Error fetching settings from supabase (table might not exist):', e);
+      try {
+        const { data, error } = await supabase
+          .from('user_settings')
+          .select('drive_folder_id, pedal_scroll_speed')
+          .eq('user_email', session.user.email)
+          .maybeSingle();
+
+        if (data) {
+          const newSettings = { 
+            driveFolderId: data.drive_folder_id,
+            pedalScrollSpeed: data.pedal_scroll_speed || 0.2
+          };
+          setSettings(newSettings);
+          localStorage.setItem('cancionero_settings', JSON.stringify(newSettings));
         }
+      } catch (e) {
+        console.warn('Error al sincronizar ajustes con Supabase (posiblemente offline):', e);
       }
-      setIsLoading(false);
     };
 
-    loadSettings();
-  }, [session]);
+    if (status !== 'loading') {
+      syncWithSupabase();
+    }
+  }, [session, status]);
 
   const saveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
@@ -71,7 +76,7 @@ export function useAppSettings() {
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_email' });
       } catch (e) {
-        console.warn('Error saving settings to supabase:', e);
+        console.warn('Error al guardar ajustes en Supabase:', e);
       }
     }
   };
