@@ -13,7 +13,7 @@ export function useAppSettings() {
   const { data: session } = useSession();
   const [settings, setSettings] = useState<AppSettings>({ 
     driveFolderId: '',
-    pedalScrollSpeed: 2
+    pedalScrollSpeed: 0.2
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -40,7 +40,7 @@ export function useAppSettings() {
           if (data && data.drive_folder_id) {
             const newSettings = { 
               driveFolderId: data.drive_folder_id,
-              pedalScrollSpeed: data.pedal_scroll_speed || 2
+              pedalScrollSpeed: data.pedal_scroll_speed || 0.2
             };
             setSettings(newSettings);
             localStorage.setItem('cancionero_settings', JSON.stringify(newSettings));

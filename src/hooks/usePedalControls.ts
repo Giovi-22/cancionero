@@ -16,7 +16,7 @@ export function usePedalControls({
   onPrev,
   onScrollUp,
   onScrollDown,
-  scrollSpeed = 2,
+  scrollSpeed = 0.2,
   enabled = true
 }: PedalControlsOptions) {
   const scrollDirectionRef = useRef<0 | 1 | -1>(0)
