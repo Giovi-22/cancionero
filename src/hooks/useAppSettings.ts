@@ -33,7 +33,7 @@ export function useAppSettings() {
         try {
           const { data, error } = await supabase
             .from('user_settings')
-            .select('drive_folder_id')
+            .select('drive_folder_id, pedal_scroll_speed')
             .eq('user_email', session.user.email)
             .maybeSingle();
 
